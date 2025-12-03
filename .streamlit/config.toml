@@ -1,0 +1,10 @@
+[theme]
+base="light"
+primaryColor="#D97757"     # Een zachte terracotta/oranje (Claude accent)
+backgroundColor="#FAF9F6"  # "Warm Paper" kleur
+secondaryBackgroundColor="#F0EFEB"
+textColor="#333333"
+font="serif"
+
+[server]
+enableCORS = false

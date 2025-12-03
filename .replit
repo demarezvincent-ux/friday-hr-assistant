@@ -1,0 +1,13 @@
+run = "bash run.sh"
+entrypoint = "app.py"     # or whatever your main python file is named
+modules = ["python-3.11"]
+
+[nix]
+channel = "stable-23_05"
+
+[agent]
+expertMode = true
+
+[[ports]]
+localPort = 5000
+externalPort = 80
