@@ -6,21 +6,29 @@ import docx
 import io
 import re
 import time
+import os
 # CRUCIAAL: De library die Error 400 voorkomt
 from huggingface_hub import InferenceClient
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="FRIDAY", page_icon="⚡", layout="centered")
 
-# --- API KEYS ---
 try:
+    # Probeer eerst Streamlit Cloud manier (st.secrets)
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     FIXED_GROQ_KEY = st.secrets["FIXED_GROQ_KEY"]
     HF_API_KEY = st.secrets["HF_API_KEY"]
 except:
-    st.error("Geen Secrets gevonden! Voeg ze toe in Replit of Streamlit Cloud.")
-    st.stop()
+    # Als dat faalt (bijv. in Replit), probeer os.environ
+    try:
+        SUPABASE_URL = os.environ["SUPABASE_URL"]
+        SUPABASE_KEY = os.environ["SUPABASE_KEY"]
+        FIXED_GROQ_KEY = os.environ["FIXED_GROQ_KEY"]
+        HF_API_KEY = os.environ["HF_API_KEY"]
+    except:
+        st.error("❌ Geen API Keys gevonden! Voeg ze toe aan Secrets.")
+        st.stop()
 
 # --- DATABASE SETUP (CACHED FOR STABILITY) ---
 @st.cache_resource
