@@ -7,20 +7,18 @@ import io
 import re
 import time
 import os
-# CRUCIAAL: De library die Error 400 voorkomt
+import datetime
 from huggingface_hub import InferenceClient
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="FRIDAY", page_icon="⚡", layout="centered")
 
 try:
-    # Probeer eerst Streamlit Cloud manier (st.secrets)
     SUPABASE_URL = st.secrets["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
     FIXED_GROQ_KEY = st.secrets["FIXED_GROQ_KEY"]
     HF_API_KEY = st.secrets["HF_API_KEY"]
 except:
-    # Als dat faalt (bijv. in Replit), probeer os.environ
     try:
         SUPABASE_URL = os.environ["SUPABASE_URL"]
         SUPABASE_KEY = os.environ["SUPABASE_KEY"]
@@ -30,7 +28,7 @@ except:
         st.error("❌ Geen API Keys gevonden! Voeg ze toe aan Secrets.")
         st.stop()
 
-# --- DATABASE SETUP (CACHED FOR STABILITY) ---
+# --- DATABASE SETUP ---
 @st.cache_resource
 def init_supabase():
     try:
@@ -38,43 +36,29 @@ def init_supabase():
     except Exception as e:
         return None
 
-
 supabase = init_supabase()
 
-# --- 2. ROBUST API FUNCTIONS (BATCHED FOR SPEED) ---
-
+# --- 2. API FUNCTIONS ---
 
 def get_embeddings_batch(texts):
-    """
-    Verstuurt een LIJST met teksten in één keer naar de API.
-    Dit maakt het uploaden 10x-20x sneller.
-    """
     model_id = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     client = InferenceClient(token=HF_API_KEY)
-
-    # Maak teksten schoon
+    # Newlines verwijderen voor betere embeddings
     clean_texts = [t.replace("\n", " ").strip() for t in texts]
 
     for attempt in range(3):
         try:
-            # We sturen de hele lijst in één keer
             embeddings = client.feature_extraction(clean_texts, model=model_id)
-
-            # Zorg dat het een Python lijst is (geen numpy array)
             if hasattr(embeddings, "tolist"):
                 embeddings = embeddings.tolist()
-
             return embeddings
-
         except Exception as e:
             if "503" in str(e) or "loading" in str(e).lower():
                 time.sleep(2)
                 continue
             else:
-                print(f"DEBUG ERROR: {e}")
                 return None
     return None
-
 
 def ask_groq(context, chat_history, question):
     if not context:
@@ -86,16 +70,19 @@ def ask_groq(context, chat_history, question):
     Instructions: 
     1. Answer strictly based on the provided CONTEXT SNIPPETS.
     2. Answer in the SAME language as the user.
+    3. Be concise and to the point.
     """
 
-    messages = [{
-        "role": "system",
-        "content": system_prompt
-    }, {
-        "role": "user",
-        "content": f"CONTEXT SNIPPETS:\n{context}"
-    }]
-    messages.extend(chat_history[-4:])
+    messages = [{"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"CONTEXT SNIPPETS:\n{context}"}]
+
+    # --- CRUCIAAL: History opschonen (geen 'sources' meesturen naar Groq) ---
+    for msg in chat_history[-4:]:
+        messages.append({
+            "role": msg["role"],
+            "content": msg["content"]
+        })
+
     messages.append({"role": "user", "content": question})
 
     try:
@@ -107,18 +94,39 @@ def ask_groq(context, chat_history, question):
                 "messages": messages,
                 "temperature": 0.3
             })
+
+        if resp.status_code != 200:
+            return f"Error {resp.status_code}: {resp.text}"
+
         return resp.json()['choices'][0]['message']['content']
     except Exception as e:
         return f"Error: {e}"
 
-
-# --- 3. DOCUMENT PROCESSING (RAG) ---
-
+# --- 3. DOCUMENT PROCESSING ---
 
 def sanitize_filename(filename):
     name = filename.replace(" ", "_")
     return re.sub(r'[^a-zA-Z0-9._-]', '', name)
 
+def semantic_chunking(text, chunk_size=500):
+    """
+    Splits text op basis van leestekens (. ! ?) zodat zinnen heel blijven.
+    """
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    chunks = []
+    current_chunk = ""
+
+    for sentence in sentences:
+        if len(current_chunk) + len(sentence) > chunk_size and len(current_chunk) > 0:
+            chunks.append(current_chunk.strip())
+            current_chunk = sentence + " "
+        else:
+            current_chunk += sentence + " "
+
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+
+    return chunks
 
 def process_and_store_document(file, company_id):
     text = ""
@@ -134,34 +142,26 @@ def process_and_store_document(file, company_id):
 
     if not text: return False
 
-    # Upload file to storage
+    # Upload raw file naar Storage
     try:
         file.seek(0)
         path = f"{company_id}/{sanitize_filename(file.name)}"
-        supabase.storage.from_("documents").upload(path, file.read(),
-                                                   {"upsert": "true"})
+        supabase.storage.from_("documents").upload(path, file.read(), {"upsert": "true"})
     except:
         pass
 
-    # Chunking
-    chunk_size = 500
-    chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
-
-    # BATCH PROCESSING LOOP (Hier zit de snelheidswinst)
-    batch_size = 20  # We doen 20 chunks per keer
+    # Chunking met de nieuwe logica
+    chunks = semantic_chunking(text, chunk_size=500)
+    batch_size = 20
     progress_bar = st.progress(0)
 
     for i in range(0, len(chunks), batch_size):
-        # Pak een groepje van 20
         batch_chunks = chunks[i:i + batch_size]
-
-        # Haal vectoren op voor de hele groep (1 API call ipv 20)
         vectors = get_embeddings_batch(batch_chunks)
 
         if vectors:
             data_payload = []
             for j, vector in enumerate(vectors):
-                # Check validiteit
                 if isinstance(vector, list) and len(vector) > 300:
                     data_payload.append({
                         "content": batch_chunks[j],
@@ -172,41 +172,40 @@ def process_and_store_document(file, company_id):
                         "embedding": vector
                     })
 
-            # Bulk insert in database
             if data_payload:
                 try:
-                    supabase.table("document_chunks").insert(
-                        data_payload).execute()
+                    supabase.table("document_chunks").insert(data_payload).execute()
                 except Exception as e:
                     print(f"DB Error: {e}")
 
-        # Update balkje
         progress_bar.progress(min((i + batch_size) / len(chunks), 1.0))
 
     return True
 
-
 def get_relevant_context(query, company_id):
-    # Voor 1 query hoeven we niet te batchen, maar we gebruiken de list-wrapper
     vectors = get_embeddings_batch([query])
+    if not vectors or len(vectors) == 0: return "", []
 
-    if not vectors or len(vectors) == 0: return ""
     query_vector = vectors[0]
 
     try:
         params = {
             "query_embedding": query_vector,
-            "match_threshold": 0.3,
-            "match_count": 4,
+            "match_threshold": 0.1,  # <--- AANGEPAST: Lager gezet (was 0.3)
+            "match_count": 5,        # <--- AANGEPAST: Meer resultaten (was 4)
             "filter_company_id": company_id
         }
         response = supabase.rpc("match_documents", params).execute()
-        return "\n".join([
-            f"-- Snippet --\n{match['content']}\n" for match in response.data
-        ])
-    except:
-        return ""
 
+        context_text = "\n".join([f"-- Snippet --\n{match['content']}\n" for match in response.data])
+
+        # Unieke bronnen verzamelen
+        sources = list(set([match['metadata']['filename'] for match in response.data]))
+
+        return context_text, sources
+    except Exception as e:
+        print(f"Retrieval Error: {e}")
+        return "", []
 
 # --- 4. APP UI ---
 st.markdown("""
@@ -221,50 +220,45 @@ st.markdown("""
     }
     div[data-testid="stChatMessage"][data-testid="user"] { background-color: #F0EFEB !important; border-radius: 12px; font-family: 'Inter'; }
     section[data-testid="stSidebar"] { background-color: #F7F7F5; border-right: 1px solid #EAEAEA; }
-    div[data-testid="stStatusWidget"] { visibility: hidden; }
+
+    .source-tag {
+        font-size: 0.8rem;
+        background-color: #e0e0e0;
+        padding: 2px 8px;
+        border-radius: 10px;
+        margin-right: 5px;
+        color: #555;
+    }
 </style>
-""",
-            unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-if "company_id" not in st.session_state:
-    st.session_state.company_id = None
+if "authenticated" not in st.session_state: st.session_state.authenticated = False
+if "company_id" not in st.session_state: st.session_state.company_id = None
 
-
-# --- LOGIN (MET FORM FIX) ---
+# --- LOGIN ---
 def login_page():
     st.markdown("<br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.markdown("<h1 style='text-align: center;'>Welcome to FRIDAY</h1>",
-                    unsafe_allow_html=True)
-
-        # GEBRUIK EEN FORMULIER: Lost het "dubbel klikken" probleem op
+        st.markdown("<h1 style='text-align: center;'>Welcome to FRIDAY</h1>", unsafe_allow_html=True)
         with st.form("login_form"):
-            password = st.text_input("Access Code",
-                                     type="password",
-                                     label_visibility="collapsed")
-            submit_button = st.form_submit_button("Enter Workspace",
-                                                  use_container_width=True)
+            password = st.text_input("Access Code", type="password", label_visibility="collapsed")
+            submit_button = st.form_submit_button("Enter Workspace", use_container_width=True)
 
             if submit_button:
                 if not supabase:
                     st.error("Database connection failed")
                 else:
                     try:
-                        response = supabase.table('clients').select("*").eq(
-                            'access_code', password).execute()
+                        response = supabase.table('clients').select("*").eq('access_code', password).execute()
                         if response.data:
                             st.session_state.authenticated = True
-                            st.session_state.company_id = response.data[0][
-                                'company_id']
+                            st.session_state.company_id = response.data[0]['company_id']
                             st.rerun()
                         else:
                             st.error("Invalid access code")
                     except Exception as e:
                         st.error("Login failed. Please try again.")
-
 
 # --- MAIN APP ---
 def main_app():
@@ -273,41 +267,31 @@ def main_app():
         st.markdown("---")
 
         if "hf_" not in HF_API_KEY:
-            st.error("⚠️ Please add your Hugging Face API Key in line 19!")
+            st.error("⚠️ Please add your Hugging Face API Key!")
             st.stop()
 
         active_files = []
         try:
-            files = supabase.storage.from_("documents").list(
-                path=st.session_state.company_id)
-            active_files = [
-                f['name'] for f in files
-                if f['name'] != '.emptyFolderPlaceholder'
-            ]
+            files = supabase.storage.from_("documents").list(path=st.session_state.company_id)
+            active_files = [f['name'] for f in files if f['name'] != '.emptyFolderPlaceholder']
 
             st.markdown("**Knowledge Base**")
             for f in active_files:
-                st.markdown(
-                    f"<div style='padding: 8px; background: white; margin-bottom: 5px; border-radius: 5px; border: 1px solid #eee; font-size: 0.85rem;'>📄 {f}</div>",
-                    unsafe_allow_html=True)
+                st.markdown(f"<div style='padding: 8px; background: white; margin-bottom: 5px; border-radius: 5px; border: 1px solid #eee; font-size: 0.85rem;'>📄 {f}</div>", unsafe_allow_html=True)
         except:
             pass
 
         with st.expander("Upload New Files"):
-            up_files = st.file_uploader("Index Documents",
-                                        type=["pdf", "docx"],
-                                        accept_multiple_files=True)
+            up_files = st.file_uploader("Index Documents", type=["pdf", "docx"], accept_multiple_files=True)
             if up_files and st.button("Process & Index"):
                 for f in up_files:
                     clean_name = sanitize_filename(f.name)
                     if clean_name in active_files:
-                        st.toast(f"Skipping {f.name} (Already Indexed)",
-                                 icon="⏭️")
+                        st.toast(f"Skipping {f.name} (Already Indexed)", icon="⏭️")
                         continue
 
                     with st.spinner(f"Indexing {f.name}..."):
-                        success = process_and_store_document(
-                            f, st.session_state.company_id)
+                        success = process_and_store_document(f, st.session_state.company_id)
                         if success:
                             st.toast(f"Indexed {f.name}", icon="✅")
                             active_files.append(clean_name)
@@ -316,19 +300,44 @@ def main_app():
                 time.sleep(1)
                 st.rerun()
 
+        # --- RESET BUTTON (Handig voor testen) ---
+        with st.expander("⚠️ Danger Zone"):
+            if st.button("Hard Reset (Delete All)", type="primary"):
+                try:
+                    supabase.table("document_chunks").delete().neq("id", 0).execute()
+                    files = supabase.storage.from_("documents").list(path=st.session_state.company_id)
+                    if files:
+                        file_paths = [f"{st.session_state.company_id}/{f['name']}" for f in files]
+                        supabase.storage.from_("documents").remove(file_paths)
+                    st.toast("Alles gewist!", icon="🗑️")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
+
         if st.button("Log Out", type="secondary"):
             st.session_state.authenticated = False
             st.session_state.company_id = None
             st.rerun()
 
-    st.markdown("<h3>Good afternoon. How can I help you?</h3>",
-                unsafe_allow_html=True)
+    # DYNAMIC GREETING
+    current_hour = datetime.datetime.now().hour
+    if 5 <= current_hour < 12:
+        greeting = "Good morning"
+    elif 12 <= current_hour < 18:
+        greeting = "Good afternoon"
+    else:
+        greeting = "Good evening"
+
+    st.markdown(f"<h3>{greeting}. How can I help you?</h3>", unsafe_allow_html=True)
 
     if "messages" not in st.session_state: st.session_state.messages = []
 
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
+            if "sources" in msg and msg["sources"]:
+                st.caption(f"📚 Sources: {', '.join(msg['sources'])}")
 
     if prompt := st.chat_input("Ask about your documents..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
@@ -337,21 +346,23 @@ def main_app():
 
         with st.chat_message("assistant"):
             with st.spinner("Analyzing..."):
-                relevant_context = get_relevant_context(
-                    prompt, st.session_state.company_id)
-                # Debug optie weer aangezet voor de zekerheid
-                # with st.expander("🔍 Debug: View Retrieved Context"):
-                #     st.write(relevant_context if relevant_context else "No context found")
+                relevant_context, sources = get_relevant_context(prompt, st.session_state.company_id)
 
-                resp = ask_groq(relevant_context, st.session_state.messages,
-                                prompt)
+                # --- DEBUG: KIJKEN WAT HIJ VINDT ---
+                with st.expander("🔍 Debug: Bekijk gevonden context"):
+                    st.write(relevant_context if relevant_context else "❌ Geen relevante tekst gevonden (Vectorscore te laag)")
+
+                resp = ask_groq(relevant_context, st.session_state.messages, prompt)
                 st.markdown(resp)
+
+                if sources:
+                    st.caption(f"📚 Sources: {', '.join(sources)}")
 
         st.session_state.messages.append({
             "role": "assistant",
-            "content": resp
+            "content": resp,
+            "sources": sources
         })
-
 
 if st.session_state.authenticated: main_app()
 else: login_page()
