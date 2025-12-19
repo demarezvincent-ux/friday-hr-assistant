@@ -1,7 +1,7 @@
 import streamlit as st
 from supabase import create_client, Client
 import requests
-from PyPDF2 import PdfReader
+import pdfplumber  # CRITICAL: Ensures tables are read correctly
 import docx
 import re
 import time
@@ -13,105 +13,69 @@ from huggingface_hub import InferenceClient
 # --- 1. CONFIGURATION & STYLING ---
 st.set_page_config(page_title="FRIDAY", page_icon="⚡", layout="wide")
 
-# Custom CSS for "Perplexity-like" feel
 st.markdown("""
 <style>
-    /* General Fonts & Colors */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
-
     .stApp { background-color: #F9FAFB; font-family: 'Inter', sans-serif; }
 
-    /* Sidebar Styling */
-    section[data-testid="stSidebar"] {
-        background-color: #F3F4F6;
-        border-right: 1px solid #E5E7EB;
-    }
+    /* Sidebar */
+    section[data-testid="stSidebar"] { background-color: #F3F4F6; border-right: 1px solid #E5E7EB; }
 
-    /* Source Tags (Perplexity Style) */
-    .source-container {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-bottom: 12px;
-        margin-top: 4px;
-    }
+    /* Source Tags */
+    .source-container { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
     .source-tag {
-        font-size: 0.75rem;
-        background-color: #FFFFFF;
-        border: 1px solid #E5E7EB;
-        padding: 4px 10px;
-        border-radius: 16px;
-        color: #374151;
-        font-weight: 500;
-        display: flex;
-        align-items: center;
+        font-size: 0.75rem; background-color: #FFFFFF; border: 1px solid #E5E7EB;
+        padding: 4px 10px; border-radius: 16px; color: #374151; display: flex; align-items: center;
         transition: all 0.2s;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     }
-    .source-tag:hover {
-        border-color: #3D6E98;
-        color: #3D6E98;
-    }
+    .source-tag:hover { border-color: #3D6E98; color: #3D6E98; }
 
-    /* Message Bubbles */
-    div[data-testid="stChatMessage"] {
-        background-color: transparent; 
-        padding: 1rem 0;
-    }
-    div[data-testid="stChatMessage"][data-testid="user"] {
-        background-color: transparent;
-    }
-
-    /* Buttons */
-    div.stButton > button {
-        border-radius: 8px;
-        font-weight: 500;
-    }
+    /* Chat Bubbles */
+    div[data-testid="stChatMessage"] { background-color: transparent; padding: 1rem 0; }
 </style>
 """,
             unsafe_allow_html=True)
 
+
 # --- SECRETS HANDLING ---
-try:
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-    FIXED_GROQ_KEY = st.secrets["FIXED_GROQ_KEY"]
-    HF_API_KEY = st.secrets["HF_API_KEY"]
-except:
+def get_secret(key_name):
+    if key_name in os.environ: return os.environ[key_name]
     try:
-        SUPABASE_URL = os.environ["SUPABASE_URL"]
-        SUPABASE_KEY = os.environ["SUPABASE_KEY"]
-        FIXED_GROQ_KEY = os.environ["FIXED_GROQ_KEY"]
-        HF_API_KEY = os.environ["HF_API_KEY"]
+        if key_name in st.secrets: return st.secrets[key_name]
     except:
-        st.error(
-            "❌ Critical Error: API Keys missing. Please configure Secrets.")
-        st.stop()
+        pass
+    return None
 
-# --- 2. STATE & DATABASE INIT ---
 
+SUPABASE_URL = get_secret("SUPABASE_URL")
+SUPABASE_KEY = get_secret("SUPABASE_KEY")
+FIXED_GROQ_KEY = get_secret("FIXED_GROQ_KEY")
+HF_API_KEY = get_secret("HF_API_KEY")
+
+if not all([SUPABASE_URL, SUPABASE_KEY, FIXED_GROQ_KEY, HF_API_KEY]):
+    st.error(
+        "❌ Missing API Keys. Please check your Secrets or Environment Variables."
+    )
+    st.stop()
+
+# --- 2. STATE ---
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "company_id" not in st.session_state: st.session_state.company_id = None
-if "chats" not in st.session_state:
-    st.session_state.chats = {}  # Dictionary of chat sessions
+if "chats" not in st.session_state: st.session_state.chats = {}
 if "current_chat_id" not in st.session_state:
     st.session_state.current_chat_id = None
-if "view" not in st.session_state:
-    st.session_state.view = "chat"  # 'chat' or 'documents'
+if "view" not in st.session_state: st.session_state.view = "chat"
 
 
 @st.cache_resource
 def init_supabase():
-    try:
-        return create_client(SUPABASE_URL, SUPABASE_KEY)
-    except Exception as e:
-        return None
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 supabase = init_supabase()
 
-# --- 3. CORE LOGIC (BACKEND) ---
+# --- 3. BACKEND LOGIC ---
 
 
 def get_embeddings_batch(texts):
@@ -119,14 +83,12 @@ def get_embeddings_batch(texts):
     client = InferenceClient(token=HF_API_KEY)
     clean_texts = [t.replace("\n", " ").strip() for t in texts]
 
-    # Retry logic for HuggingFace cold starts
     for attempt in range(3):
         try:
             embeddings = client.feature_extraction(clean_texts, model=model_id)
-            if hasattr(embeddings, "tolist"):
-                return embeddings.tolist()
+            if hasattr(embeddings, "tolist"): return embeddings.tolist()
             return embeddings
-        except Exception as e:
+        except:
             time.sleep(2)
     return None
 
@@ -136,89 +98,107 @@ def sanitize_filename(filename):
     return re.sub(r'[^a-zA-Z0-9._-]', '', name)
 
 
-def semantic_chunking(text, chunk_size=500):
-    # Split by sentence endings to keep context intact
-    sentences = re.split(r'(?<=[.!?])\s+', text)
+def smart_chunking(text, chunk_size=1000, overlap=200):
+    """
+    Splits text by character count with overlap to preserve table context.
+    Does NOT split by punctuation, preserving table formatting.
+    """
+    if not text: return []
     chunks = []
-    current_chunk = ""
+    start = 0
+    text_len = len(text)
 
-    for sentence in sentences:
-        if len(current_chunk) + len(sentence) > chunk_size and len(
-                current_chunk) > 0:
-            chunks.append(current_chunk.strip())
-            current_chunk = sentence + " "
-        else:
-            current_chunk += sentence + " "
-    if current_chunk: chunks.append(current_chunk.strip())
+    while start < text_len:
+        end = start + chunk_size
+        chunk = text[start:end]
+        chunks.append(chunk)
+        start += (chunk_size - overlap)
+
     return chunks
+
+
+# --- DATABASE REGISTRY FUNCTIONS ---
+
+
+def register_document(filename, company_id):
+    try:
+        supabase.table("documents").insert({
+            "company_id": company_id,
+            "filename": filename
+        }).execute()
+        return True
+    except:
+        return False
+
+
+def check_if_document_exists(filename, company_id):
+    try:
+        res = supabase.table("documents").select("id").eq(
+            "company_id", company_id).eq("filename", filename).execute()
+        return len(res.data) > 0
+    except:
+        return False
+
+
+def get_all_documents(company_id):
+    try:
+        res = supabase.table("documents").select("*").eq(
+            "company_id", company_id).order('created_at', desc=True).execute()
+        return res.data
+    except:
+        return []
 
 
 def delete_document(filename, company_id):
     try:
-        # 1. Remove from Storage
-        path = f"{company_id}/{filename}"
-        supabase.storage.from_("documents").remove([path])
-
-        # 2. Remove embeddings from Database
-        # Note: This requires your DB to have metadata->>filename matching.
-        # If your vector table doesn't allow easy metadata filtering, this part might fail silently
-        # but the storage delete is the most important for the user.
+        supabase.table("documents").delete().eq("company_id", company_id).eq(
+            "filename", filename).execute()
         supabase.table("document_chunks").delete().eq(
             "metadata->>company_id", company_id).eq("metadata->>filename",
                                                     filename).execute()
+        try:
+            path = f"{company_id}/{filename}"
+            supabase.storage.from_("documents").remove([path])
+        except:
+            pass
         return True
-    except Exception as e:
-        st.error(f"Delete failed: {e}")
+    except:
         return False
 
 
 def process_and_store_document(file, company_id, force_overwrite=False):
-    # Check if exists first
     clean_name = sanitize_filename(file.name)
-    path = f"{company_id}/{clean_name}"
 
-    # Check existence
-    try:
-        existing = supabase.storage.from_("documents").list(path=company_id)
-        existing_names = [f['name'] for f in existing]
+    if check_if_document_exists(clean_name, company_id):
+        if not force_overwrite: return "exists"
+        else: delete_document(clean_name, company_id)
 
-        if clean_name in existing_names:
-            if not force_overwrite:
-                return "exists"  # Signal to UI that it exists
-            else:
-                # If overwriting, first delete old chunks
-                delete_document(clean_name, company_id)
-    except:
-        pass
-
-    # Extract Text
     text = ""
     try:
         if file.name.endswith(".pdf"):
-            pdf = PdfReader(file)
-            text = "".join([page.extract_text() for page in pdf.pages])
+            # Using pdfplumber for better table extraction
+            with pdfplumber.open(file) as pdf:
+                pages = [p.extract_text(layout=True) or "" for p in pdf.pages]
+                text = "\n".join(pages)
         elif file.name.endswith(".docx"):
             doc = docx.Document(file)
             text = "\n".join([p.text for p in doc.paragraphs])
-    except:
+    except Exception as e:
         return "error"
 
     if not text: return "empty"
 
-    # Upload File to Storage
+    # Optional: Upload raw file
     try:
         file.seek(0)
-        supabase.storage.from_("documents").upload(path, file.read(),
-                                                   {"upsert": "true"})
-    except Exception as e:
-        pass  # Handle storage error gracefully
+        supabase.storage.from_("documents").upload(
+            f"{company_id}/{clean_name}", file.read(), {"upsert": "true"})
+    except:
+        pass
 
-    # Chunk & Embed
-    chunks = semantic_chunking(text)
+    chunks = smart_chunking(text, chunk_size=1000, overlap=200)
     batch_size = 20
-
-    # Using a placeholder for progress to not block UI
-    progress_text = st.empty()
+    progress_bar = st.progress(0)
 
     for i in range(0, len(chunks), batch_size):
         batch = chunks[i:i + batch_size]
@@ -227,7 +207,6 @@ def process_and_store_document(file, company_id, force_overwrite=False):
         if vectors:
             payload = []
             for j, vector in enumerate(vectors):
-                # Sanity check vector length
                 if isinstance(vector, list) and len(vector) > 300:
                     payload.append({
                         "content": batch[j],
@@ -240,10 +219,10 @@ def process_and_store_document(file, company_id, force_overwrite=False):
             if payload:
                 supabase.table("document_chunks").insert(payload).execute()
 
-        progress_text.caption(
-            f"Processing {file.name}: {min(100, int((i/len(chunks))*100))}%")
+        progress_bar.progress(min((i + batch_size) / len(chunks), 1.0))
 
-    progress_text.empty()
+    progress_bar.empty()
+    register_document(clean_name, company_id)
     return "success"
 
 
@@ -254,46 +233,37 @@ def get_relevant_context(query, company_id):
     try:
         params = {
             "query_embedding": vectors[0],
-            "match_threshold": 0.35,  # Strictness
-            "match_count": 6,
+            "match_threshold":
+            0.15,  # <--- FIXED: Lowered from 0.35 to 0.15 to match original behavior
+            "match_count": 8,  # <--- INCREASED: Fetch more chunks to be safe
             "filter_company_id": company_id
         }
         response = supabase.rpc("match_documents", params).execute()
 
-        # Build context string and list of sources
-        matches = response.data
         context_str = ""
         sources = []
-
-        for m in matches:
+        for m in response.data:
             context_str += f"-- SOURCE: {m['metadata']['filename']} --\n{m['content']}\n\n"
             if m['metadata']['filename'] not in sources:
                 sources.append(m['metadata']['filename'])
 
         return context_str, sources
-    except Exception as e:
-        print(e)
+    except:
         return "", []
 
 
 def ask_groq(context, history, query):
     system_prompt = """
     You are FRIDAY, an expert HR assistant.
-    1. USE ONLY the provided CONTEXT SNIPPETS to answer.
-    2. If the answer is not in the context, say "I couldn't find that information in the documents."
-    3. Do not mention "context snippets" in your output, just answer naturaly.
-    4. Keep tone professional and concise.
+    1. Answer strictly based on the provided CONTEXT.
+    2. The context may contain tables formatted as text. Look closely at line alignment.
+    3. If the answer is not in the context, say "I couldn't find that information."
     """
 
-    # We construct messages specifically for this turn to ensure context isolation
     messages = [{"role": "system", "content": system_prompt}]
-
-    # Add recent history (last 2 turns) for conversation flow, but NOT previous contexts
-    # We filter history to only include user/assistant content, stripping metadata
     for msg in history[-4:]:
         messages.append({"role": msg["role"], "content": msg["content"]})
 
-    # Inject CURRENT context immediately before the query
     if context:
         messages.append({
             "role": "user",
@@ -309,31 +279,28 @@ def ask_groq(context, history, query):
             json={
                 "model": "llama-3.3-70b-versatile",
                 "messages": messages,
-                "temperature": 0.1  # Low temp for factual accuracy
+                "temperature": 0.1
             })
         return resp.json()['choices'][0]['message']['content']
     except:
-        return "I'm having trouble connecting to my brain right now."
+        return "Connection error."
 
 
-# --- 4. UI COMPONENTS ---
+# --- 4. UI PAGES ---
 
 
 def render_sidebar():
     with st.sidebar:
         st.title("⚡ FRIDAY")
-        st.caption(f"Workspace: {st.session_state.company_id}")
-
+        st.caption(f"ID: {st.session_state.company_id}")
         st.markdown("---")
 
-        # Navigation
         if st.button("💬 Chat",
                      use_container_width=True,
                      type="primary"
                      if st.session_state.view == "chat" else "secondary"):
             st.session_state.view = "chat"
             st.rerun()
-
         if st.button("📂 Documents",
                      use_container_width=True,
                      type="primary"
@@ -342,27 +309,22 @@ def render_sidebar():
             st.rerun()
 
         st.markdown("---")
-
-        # Chat History Management
         if st.session_state.view == "chat":
-            st.subheader("History")
             if st.button("➕ New Chat", use_container_width=True):
                 create_new_chat()
                 st.rerun()
 
-            # Show list of past chats
             chat_ids = list(st.session_state.chats.keys())
             if chat_ids:
-                for cid in reversed(chat_ids[-5:]):  # Show last 5
-                    # Get first message as title or default
+                st.caption("Recent Chats")
+                for cid in reversed(chat_ids[-5:]):
                     msgs = st.session_state.chats[cid]
                     title = msgs[0][
-                        'content'][:25] + "..." if msgs else "Empty Chat"
-                    if st.button(f"Draft: {title}", key=cid):
+                        'content'][:20] + "..." if msgs else "New Chat"
+                    if st.button(f"📝 {title}", key=cid):
                         st.session_state.current_chat_id = cid
                         st.rerun()
 
-        # Logout
         st.markdown("---")
         if st.button("Log Out"):
             st.session_state.clear()
@@ -375,96 +337,64 @@ def create_new_chat():
     st.session_state.current_chat_id = new_id
 
 
-# --- 5. PAGES ---
-
-
 def documents_page():
     st.title("📂 Knowledge Base")
-    st.markdown("Manage the documents FRIDAY uses to answer your questions.")
-
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        st.subheader("Upload Documents")
-        uploaded_files = st.file_uploader("Drop PDF or DOCX here",
+        st.subheader("Upload")
+        uploaded_files = st.file_uploader("Upload PDF/DOCX",
                                           type=["pdf", "docx"],
                                           accept_multiple_files=True)
-        force_overwrite = st.checkbox("Overwrite files if they already exist?")
+        force_overwrite = st.checkbox("Overwrite existing files?")
 
-        if uploaded_files and st.button("Process Files", type="primary"):
+        if uploaded_files and st.button("Index Files", type="primary"):
             for f in uploaded_files:
-                with st.spinner(f"Reading {f.name}..."):
+                with st.spinner(f"Processing {f.name}..."):
                     status = process_and_store_document(
                         f, st.session_state.company_id, force_overwrite)
-                    if status == "success":
-                        st.toast(f"✅ Indexed: {f.name}")
+                    if status == "success": st.toast(f"✅ Indexed: {f.name}")
                     elif status == "exists":
-                        st.warning(
-                            f"⚠️ {f.name} already exists. Check 'Overwrite' to replace it."
-                        )
+                        st.warning(f"⚠️ {f.name} exists. Enable Overwrite.")
                     else:
-                        st.error(f"❌ Failed to process {f.name}")
+                        st.error(f"❌ Error: {f.name}")
             time.sleep(1)
             st.rerun()
 
     with col2:
-        st.subheader("Parsed Files")
-        # Fetch current files
-        try:
-            files = supabase.storage.from_("documents").list(
-                path=st.session_state.company_id)
-            # Filter out empty folder placeholder
-            files = [
-                f for f in files if f['name'] != '.emptyFolderPlaceholder'
-            ]
-
-            if not files:
-                st.info("No documents found.")
-            else:
-                for f in files:
-                    # File Card
-                    with st.container():
-                        c1, c2 = st.columns([4, 1])
-                        c1.markdown(f"📄 **{f['name']}**")
-                        if c2.button("🗑️",
-                                     key=f"del_{f['name']}",
-                                     help="Delete"):
-                            if delete_document(f['name'],
-                                               st.session_state.company_id):
-                                st.toast("Deleted")
-                                time.sleep(0.5)
-                                st.rerun()
-                        st.divider()
-        except Exception as e:
-            st.error("Could not load file list.")
+        st.subheader("Indexed Documents")
+        docs = get_all_documents(st.session_state.company_id)
+        if not docs: st.info("No documents found.")
+        else:
+            for doc in docs:
+                with st.container():
+                    c1, c2 = st.columns([4, 1])
+                    c1.markdown(f"📄 **{doc['filename']}**")
+                    if c2.button("🗑️", key=f"del_{doc['id']}", help="Delete"):
+                        if delete_document(doc['filename'],
+                                           st.session_state.company_id):
+                            st.toast("Deleted")
+                            time.sleep(0.5)
+                            st.rerun()
+                    st.divider()
 
 
 def chat_page():
-    # Ensure chat session exists
-    if not st.session_state.current_chat_id:
-        create_new_chat()
-
+    if not st.session_state.current_chat_id: create_new_chat()
     current_messages = st.session_state.chats[st.session_state.current_chat_id]
 
-    # Greeting based on time
     hour = datetime.datetime.now().hour
     greeting = "Good morning" if 5 <= hour < 12 else "Good afternoon" if 12 <= hour < 18 else "Good evening"
 
     if not current_messages:
         st.markdown(
-            f"<h2 style='text-align: center; color: #333;'>{greeting}, welcome to FRIDAY.</h2>",
-            unsafe_allow_html=True)
-        st.markdown(
-            f"<p style='text-align: center; color: #666;'>Ask me anything about your documents.</p>",
+            f"<h2 style='text-align: center; color: #333;'>{greeting}.</h2>",
             unsafe_allow_html=True)
 
-    # Render Chat History
     for msg in current_messages:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
-            # Render Sources visually distinct (Perplexity style)
             if "sources" in msg and msg["sources"]:
-                # Generate HTML for badges
                 tags_html = "".join([
                     f"<div class='source-tag'>📄 {s}</div>"
                     for s in msg["sources"]
@@ -472,30 +402,19 @@ def chat_page():
                 st.markdown(f"<div class='source-container'>{tags_html}</div>",
                             unsafe_allow_html=True)
 
-    # Input Area
     if prompt := st.chat_input("Ask a question..."):
-        # 1. Add User Message
         user_msg = {"role": "user", "content": prompt}
         st.session_state.chats[st.session_state.current_chat_id].append(
             user_msg)
         with st.chat_message("user"):
             st.write(prompt)
 
-        # 2. Process Answer
         with st.chat_message("assistant"):
-            with st.spinner("Searching documents..."):
-                # Get Context & Sources
-                context_text, sources = get_relevant_context(
+            with st.spinner("Thinking..."):
+                context, sources = get_relevant_context(
                     prompt, st.session_state.company_id)
-
-                # Get LLM Response
-                response_text = ask_groq(context_text, current_messages,
-                                         prompt)
-
-                # Display Answer
-                st.write(response_text)
-
-                # Display Sources immediately
+                response = ask_groq(context, current_messages, prompt)
+                st.write(response)
                 if sources:
                     tags_html = "".join([
                         f"<div class='source-tag'>📄 {s}</div>" for s in sources
@@ -504,54 +423,39 @@ def chat_page():
                         f"<div class='source-container'>{tags_html}</div>",
                         unsafe_allow_html=True)
 
-        # 3. Save Assistant Message
         assistant_msg = {
             "role": "assistant",
-            "content": response_text,
-            "sources":
-            sources  # Store ONLY sources used for this specific answer
+            "content": response,
+            "sources": sources
         }
         st.session_state.chats[st.session_state.current_chat_id].append(
             assistant_msg)
 
 
-# --- 6. AUTHENTICATION & MAIN ROUTER ---
-
-
+# --- 5. AUTH ---
 def login_page():
     st.markdown("<br><br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
         st.title("⚡ FRIDAY Access")
-        with st.form("login_form"):
-            password = st.text_input("Company Access Code", type="password")
-            submit = st.form_submit_button("Enter Workspace",
-                                           use_container_width=True)
-
-            if submit:
-                if not supabase:
-                    st.error("Database Error")
-                else:
-                    try:
-                        res = supabase.table('clients').select("*").eq(
-                            'access_code', password).execute()
-                        if res.data:
-                            st.session_state.authenticated = True
-                            st.session_state.company_id = res.data[0][
-                                'company_id']
-                            st.rerun()
-                        else:
-                            st.error("Invalid Code")
-                    except Exception as e:
-                        st.error(f"Login Error: {e}")
+        with st.form("login"):
+            pw = st.text_input("Access Code", type="password")
+            if st.form_submit_button("Login", use_container_width=True):
+                try:
+                    res = supabase.table('clients').select("*").eq(
+                        'access_code', pw).execute()
+                    if res.data:
+                        st.session_state.authenticated = True
+                        st.session_state.company_id = res.data[0]['company_id']
+                        st.rerun()
+                    else:
+                        st.error("Invalid Code")
+                except:
+                    st.error("Login Error")
 
 
-# Main Router
-if not st.session_state.authenticated:
-    login_page()
+if not st.session_state.authenticated: login_page()
 else:
     render_sidebar()
-    if st.session_state.view == "chat":
-        chat_page()
-    elif st.session_state.view == "documents":
-        documents_page()
+    if st.session_state.view == "chat": chat_page()
+    elif st.session_state.view == "documents": documents_page()
