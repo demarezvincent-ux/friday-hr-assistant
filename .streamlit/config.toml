@@ -1,9 +1,9 @@
 [theme]
 base="light"
-primaryColor="#D97757"     # Een zachte terracotta/oranje (Claude accent)
-backgroundColor="#FAF9F6"  # "Warm Paper" kleur
-secondaryBackgroundColor="#F0EFEB"
-textColor="#333333"
+primaryColor="#D97757"      # Terracotta
+backgroundColor="#FAF9F6"   # Warm Paper
+secondaryBackgroundColor="#EBE9E4" # <--- CHANGED: Slightly darker/warmer for better contrast
+textColor="#2C2C2C"         # <--- CHANGED: Slightly darker for sharper text
 font="serif"
 
 [server]
