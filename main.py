@@ -289,6 +289,8 @@ def process_and_store_document(file, company_id, force_overwrite=False):
 def get_relevant_context(query, company_id):
     # Normalize query to handle compound word variations
     normalized_query = normalize_query(query)
+    
+    # Start with normalized query as base
     search_query = normalized_query
     
     try:
@@ -299,8 +301,10 @@ def get_relevant_context(query, company_id):
             json={"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": expansion_prompt}], "temperature": 0.1, "max_tokens": 100},
             timeout=3
         )
-        if resp.status_code == 200: 
-            search_query = resp.json()['choices'][0]['message']['content']
+        if resp.status_code == 200:
+            # CRITICAL FIX: Combine normalized query WITH LLM expansion instead of replacing
+            llm_expansion = resp.json()['choices'][0]['message']['content']
+            search_query = f"{normalized_query} {llm_expansion}"
     except Exception:
         pass
 
@@ -372,6 +376,26 @@ def get_recent_chats(company_id):
     except:
         return []
 
+def delete_chat(chat_id, company_id):
+    """Delete a chat and all its messages from the database."""
+    try:
+        supabase.table("messages").delete().eq("chat_id", chat_id).eq("company_id", company_id).execute()
+        return True
+    except:
+        return False
+
+def get_dynamic_greeting():
+    """Return a greeting based on the current time of day."""
+    hour = datetime.datetime.now().hour
+    if 5 <= hour < 12:
+        return "Good morning."
+    elif 12 <= hour < 17:
+        return "Good afternoon."
+    elif 17 <= hour < 21:
+        return "Good evening."
+    else:
+        return "Hello."
+
 # --- UI PAGES ---
 def render_sidebar():
     with st.sidebar:
@@ -398,55 +422,69 @@ def render_sidebar():
                 st.caption("No history found.")
             else:
                 for chat in recent:
-                    # Unique key needed for each button
-                    if st.button(f"📝 {chat['title']}", key=chat['id'], use_container_width=True):
-                        st.session_state.current_chat_id = chat['id']
-                        st.rerun()
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        if st.button(f"📝 {chat['title']}", key=f"chat_{chat['id']}", use_container_width=True):
+                            st.session_state.current_chat_id = chat['id']
+                            st.rerun()
+                    with col2:
+                        if st.button("🗑️", key=f"del_{chat['id']}", help="Delete chat"):
+                            delete_chat(chat['id'], st.session_state.company_id)
+                            # If deleting current chat, create new one
+                            if st.session_state.current_chat_id == chat['id']:
+                                create_new_chat()
+                            st.rerun()
 
         st.markdown("---")
         if st.button("Log Out"): st.session_state.clear(); st.rerun()
 
 def create_new_chat(): st.session_state.current_chat_id = str(uuid.uuid4())
 
-# --- HELPER: HANDLE QUERY EXECUTION ---
+# --- HELPER: HANDLE QUERY EXECUTION WITH LOADING ANIMATION ---
 def handle_query(query):
     # Save user msg with COMPANY ID
     save_message(st.session_state.current_chat_id, "user", query, st.session_state.company_id)
 
-    # Process
-    history = load_chat_history(st.session_state.current_chat_id)
-    context, sources = get_relevant_context(query, st.session_state.company_id)
-    response = ask_groq(context, history, query)
+    # Show loading animation while processing
+    with st.chat_message("user"):
+        st.write(query)
+    
+    with st.chat_message("assistant"):
+        # Create a placeholder for the typing animation
+        message_placeholder = st.empty()
+        
+        # Show animated loading dots
+        loading_frames = ["Thinking.", "Thinking..", "Thinking..."]
+        for i in range(6):  # Show animation while processing starts
+            message_placeholder.markdown(f"*{loading_frames[i % 3]}*")
+            time.sleep(0.3)
+        
+        # Process the query
+        history = load_chat_history(st.session_state.current_chat_id)
+        context, sources = get_relevant_context(query, st.session_state.company_id)
+        response = ask_groq(context, history, query)
 
-    # Save AI msg with COMPANY ID
-    save_message(st.session_state.current_chat_id, "assistant", response, st.session_state.company_id, sources)
+        # Save AI msg with COMPANY ID
+        save_message(st.session_state.current_chat_id, "assistant", response, st.session_state.company_id, sources)
+        
+        # Clear placeholder and show final response
+        message_placeholder.empty()
+    
     st.rerun()
 
 def chat_page():
     if not st.session_state.current_chat_id: create_new_chat()
     history = load_chat_history(st.session_state.current_chat_id)
 
-    # --- NEW EMPTY STATE UI ---
+    # --- DYNAMIC GREETING (only when no history) ---
     if not history:
-        # Centered Welcome
-        st.markdown("""
-        <div style="text-align: center; margin-top: 8vh; margin-bottom: 2rem;">
-            <h1 style="font-size: 3rem; margin-bottom: 0.5rem;">Good day.</h1>
+        greeting = get_dynamic_greeting()
+        st.markdown(f"""
+        <div style="text-align: center; margin-top: 15vh; margin-bottom: 2rem;">
+            <h1 style="font-size: 3rem; margin-bottom: 0.5rem;">{greeting}</h1>
             <p style="color: #666; font-family: 'Inter', sans-serif;">How can FRIDAY help you with HR tasks today?</p>
         </div>
         """, unsafe_allow_html=True)
-
-        # Suggestion Buttons
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            if st.button("📄 Summarize Handbook", use_container_width=True):
-                handle_query("Please summarize the key points of the employee handbook.")
-        with col2:
-            if st.button("✈️ Leave Policy", use_container_width=True):
-                handle_query("What is the current policy regarding annual leave and holidays?")
-        with col3:
-            if st.button("🤒 Sick Days", use_container_width=True):
-                handle_query("How many sick days am I allowed and what is the reporting procedure?")
 
     # --- CHAT HISTORY RENDER ---
     for msg in history:
