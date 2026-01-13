@@ -306,10 +306,14 @@ def get_relevant_context(query, company_id):
             # Use the expanded "OR" query directly
             llm_expansion = resp.json()['choices'][0]['message']['content']
             search_query = llm_expansion
+        elif resp.status_code == 429:
+            # Rate limit hit: Silently fall back to normalized query
+            pass
         else:
-            print(f"Query expansion failed with status {resp.status_code}: {resp.text}")
+             print(f"Query expansion failed with status {resp.status_code}: {resp.text}")
     except Exception as e:
-        print(f"Query expansion error: {e}")
+        # Any other error: Silently fall back to normalized query
+        pass
 
     vectors = get_embeddings_batch([search_query])
     if not vectors: return "", []
