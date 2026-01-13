@@ -296,21 +296,27 @@ def get_relevant_context(query, company_id):
         # CRITICAL FIX: Ask for FULL queries with OR. This enforces (Password AND Machine) logic per language.
         # Example output: "password coffee machine OR wachtwoord koffiemachine"
         expansion_prompt = f"Translate '{normalized_query}' into English, Dutch, and French fully formed queries. Correct typos. Output ONLY the queries separated by ' OR '."
-        resp = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {FIXED_GROQ_KEY}"},
-            json={"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": expansion_prompt}], "temperature": 0.1, "max_tokens": 100},
-            timeout=10
-        )
-        if resp.status_code == 200:
-            # Use the expanded "OR" query directly
-            llm_expansion = resp.json()['choices'][0]['message']['content']
-            search_query = llm_expansion
-        elif resp.status_code == 429:
-            # Rate limit hit: Silently fall back to normalized query
-            pass
-        else:
-             print(f"Query expansion failed with status {resp.status_code}: {resp.text}")
+        
+        # Model fallback for query expansion
+        expansion_models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+        for model in expansion_models:
+            resp = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {FIXED_GROQ_KEY}"},
+                json={"model": model, "messages": [{"role": "user", "content": expansion_prompt}], "temperature": 0.1, "max_tokens": 100},
+                timeout=10
+            )
+            if resp.status_code == 200:
+                # Use the expanded "OR" query directly
+                llm_expansion = resp.json()['choices'][0]['message']['content']
+                search_query = llm_expansion
+                break
+            elif resp.status_code == 429:
+                # Rate limit - try next model
+                continue
+            else:
+                print(f"Query expansion failed with status {resp.status_code}: {resp.text}")
+                break
     except Exception as e:
         # Any other error: Silently fall back to normalized query
         pass
@@ -333,27 +339,39 @@ def get_relevant_context(query, company_id):
     except: return "", []
 
 def ask_groq(context, history, query):
+    """Main LLM call with automatic fallback on rate limits."""
     system_prompt = "You are FRIDAY, an expert HR assistant. Answer strictly based on CONTEXT. Context may have Markdown tables. If unknown, say so."
     messages = [{"role": "system", "content": system_prompt}]
     for msg in history[-4:]: messages.append({"role": msg["role"], "content": msg["content"]})
     if context: messages.append({"role": "user", "content": f"CONTEXT:\n{context}"})
     messages.append({"role": "user", "content": query})
 
-    try:
-        resp = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {FIXED_GROQ_KEY}"},
-            json={"model": "llama-3.3-70b-versatile", "messages": messages, "temperature": 0.1},
-            timeout=30
-        )
-        if resp.status_code == 200:
-            return resp.json()['choices'][0]['message']['content']
-        elif resp.status_code == 429:
-            return f"Error: Groq Rate Limit (429). Your free tier might be exhausted or you are sending too many requests."
-        else:
-            return f"Error: Groq API returned status {resp.status_code}. {resp.text[:100]}"
-    except Exception as e: 
-        return f"Connection error: {str(e)}"
+    # Model fallback chain: Primary -> Fallback (higher rate limits)
+    models = [
+        "llama-3.3-70b-versatile",    # Primary: Best quality (1K req/day, 100K tokens/day)
+        "llama-3.1-8b-instant"         # Fallback: 14x more requests (14.4K/day, 500K tokens/day)
+    ]
+    
+    for model in models:
+        try:
+            resp = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {FIXED_GROQ_KEY}"},
+                json={"model": model, "messages": messages, "temperature": 0.1},
+                timeout=30
+            )
+            if resp.status_code == 200:
+                return resp.json()['choices'][0]['message']['content']
+            elif resp.status_code == 429:
+                # Rate limit hit - try next model in the chain
+                continue
+            else:
+                return f"Error: Groq API returned status {resp.status_code}. {resp.text[:100]}"
+        except Exception as e: 
+            return f"Connection error: {str(e)}"
+    
+    # All models exhausted
+    return "⚠️ All AI models are rate-limited. Please try again in a few minutes."
 
 # --- CHAT HISTORY & PERSISTENCE ---
 
@@ -417,6 +435,7 @@ def get_dynamic_greeting():
 def render_sidebar():
     with st.sidebar:
         st.title("⚡ FRIDAY")
+        st.caption("v1.1 (Fallback System Active)")
         st.caption(f"ID: {st.session_state.company_id}")
         st.markdown("---")
 
