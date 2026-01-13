@@ -300,14 +300,16 @@ def get_relevant_context(query, company_id):
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {FIXED_GROQ_KEY}"},
             json={"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": expansion_prompt}], "temperature": 0.1, "max_tokens": 100},
-            timeout=3
+            timeout=10
         )
         if resp.status_code == 200:
             # Use the expanded "OR" query directly
             llm_expansion = resp.json()['choices'][0]['message']['content']
             search_query = llm_expansion
-    except Exception:
-        pass
+        else:
+            print(f"Query expansion failed with status {resp.status_code}: {resp.text}")
+    except Exception as e:
+        print(f"Query expansion error: {e}")
 
     vectors = get_embeddings_batch([search_query])
     if not vectors: return "", []
@@ -336,10 +338,17 @@ def ask_groq(context, history, query):
         resp = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {FIXED_GROQ_KEY}"},
-            json={"model": "llama-3.3-70b-versatile", "messages": messages, "temperature": 0.1}
+            json={"model": "llama-3.3-70b-versatile", "messages": messages, "temperature": 0.1},
+            timeout=30
         )
-        return resp.json()['choices'][0]['message']['content']
-    except: return "Connection error."
+        if resp.status_code == 200:
+            return resp.json()['choices'][0]['message']['content']
+        elif resp.status_code == 429:
+            return f"Error: Groq Rate Limit (429). Your free tier might be exhausted or you are sending too many requests."
+        else:
+            return f"Error: Groq API returned status {resp.status_code}. {resp.text[:100]}"
+    except Exception as e: 
+        return f"Connection error: {str(e)}"
 
 # --- CHAT HISTORY & PERSISTENCE ---
 
