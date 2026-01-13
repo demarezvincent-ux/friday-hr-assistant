@@ -200,7 +200,7 @@ def extract_text_from_pdf(file):
     except: return ""
     return text
 
-def smart_chunking(text, chunk_size=1000, overlap=200):
+def smart_chunking(text, chunk_size=500, overlap=100):
     if not text: return []
     chunks = []
     start = 0
@@ -317,7 +317,8 @@ def get_relevant_context(query, company_id):
     try:
         # CRITICAL FIX: Use the expanded 'search_query' (with ORs) for FTS.
         # This handles: Multi-lingual, Typos ("coffe"), and Compound words ("koffiemachine")
-        params = {"query_embedding": vectors[0], "match_threshold": 0.15, "match_count": 20, "filter_company_id": company_id, "query_text": search_query}
+        # OPTIMIZATION: Reduced match_count to 15 for Rate Limit safety (Token budget ~2.5k instead of 6k)
+        params = {"query_embedding": vectors[0], "match_threshold": 0.15, "match_count": 15, "filter_company_id": company_id, "query_text": search_query}
         res = supabase.rpc("match_documents_hybrid", params).execute()
         context_str = ""
         sources = []
