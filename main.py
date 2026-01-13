@@ -175,9 +175,8 @@ def normalize_query(query):
     for pattern, replacement in compound_patterns:
         normalized = re.sub(pattern, replacement, normalized, flags=re.IGNORECASE)
     
-    # Also create a version with compound words split for broader matching
-    # Return both the original query and normalized version combined
-    return f"{query} {normalized}".strip()
+    # Return ONLY the normalized version to prevent FTS dilution/noise
+    return normalized.strip()
 
 # [FIX 2] Markdown Table Extraction
 def extract_text_from_pdf(file):
@@ -312,7 +311,8 @@ def get_relevant_context(query, company_id):
     if not vectors: return "", []
 
     try:
-        params = {"query_embedding": vectors[0], "match_threshold": 0.15, "match_count": 8, "filter_company_id": company_id, "query_text": query}
+        # CRITICAL FIX: Use 'normalized_query' for query_text so FTS finds "koffiemachine"
+        params = {"query_embedding": vectors[0], "match_threshold": 0.15, "match_count": 8, "filter_company_id": company_id, "query_text": normalized_query}
         res = supabase.rpc("match_documents_hybrid", params).execute()
         context_str = ""
         sources = []
