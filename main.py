@@ -293,7 +293,9 @@ def get_relevant_context(query, company_id):
     search_query = normalized_query
     
     try:
-        expansion_prompt = f"Translate '{normalized_query}' into English, Dutch, and French keywords. Correct typos. Output ONLY keywords separated by ' or '."
+        # CRITICAL FIX: Ask for FULL queries with OR. This enforces (Password AND Machine) logic per language.
+        # Example output: "password coffee machine OR wachtwoord koffiemachine"
+        expansion_prompt = f"Translate '{normalized_query}' into English, Dutch, and French fully formed queries. Correct typos. Output ONLY the queries separated by ' OR '."
         resp = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {FIXED_GROQ_KEY}"},
@@ -313,7 +315,7 @@ def get_relevant_context(query, company_id):
     try:
         # CRITICAL FIX: Use the expanded 'search_query' (with ORs) for FTS.
         # This handles: Multi-lingual, Typos ("coffe"), and Compound words ("koffiemachine")
-        params = {"query_embedding": vectors[0], "match_threshold": 0.15, "match_count": 8, "filter_company_id": company_id, "query_text": search_query}
+        params = {"query_embedding": vectors[0], "match_threshold": 0.15, "match_count": 20, "filter_company_id": company_id, "query_text": search_query}
         res = supabase.rpc("match_documents_hybrid", params).execute()
         context_str = ""
         sources = []
