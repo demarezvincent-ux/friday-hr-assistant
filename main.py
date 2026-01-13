@@ -293,7 +293,7 @@ def get_relevant_context(query, company_id):
     search_query = normalized_query
     
     try:
-        expansion_prompt = f"Translate '{normalized_query}' into English, Dutch, and French keywords. Output ONLY keywords string."
+        expansion_prompt = f"Translate '{normalized_query}' into English, Dutch, and French keywords. Correct typos. Output ONLY keywords separated by ' or '."
         resp = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {FIXED_GROQ_KEY}"},
@@ -301,9 +301,9 @@ def get_relevant_context(query, company_id):
             timeout=3
         )
         if resp.status_code == 200:
-            # CRITICAL FIX: Combine normalized query WITH LLM expansion instead of replacing
+            # Use the expanded "OR" query directly
             llm_expansion = resp.json()['choices'][0]['message']['content']
-            search_query = f"{normalized_query} {llm_expansion}"
+            search_query = llm_expansion
     except Exception:
         pass
 
@@ -311,8 +311,9 @@ def get_relevant_context(query, company_id):
     if not vectors: return "", []
 
     try:
-        # CRITICAL FIX: Use 'normalized_query' for query_text so FTS finds "koffiemachine"
-        params = {"query_embedding": vectors[0], "match_threshold": 0.15, "match_count": 8, "filter_company_id": company_id, "query_text": normalized_query}
+        # CRITICAL FIX: Use the expanded 'search_query' (with ORs) for FTS.
+        # This handles: Multi-lingual, Typos ("coffe"), and Compound words ("koffiemachine")
+        params = {"query_embedding": vectors[0], "match_threshold": 0.15, "match_count": 8, "filter_company_id": company_id, "query_text": search_query}
         res = supabase.rpc("match_documents_hybrid", params).execute()
         context_str = ""
         sources = []
