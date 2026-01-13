@@ -90,6 +90,17 @@ st.markdown("""
     }
     .source-tag:hover { border-color: #D97757; color: #D97757; }
 
+    /* 8. Sidebar History Buttons */
+    .history-btn {
+        width: 100%;
+        text-align: left;
+        padding: 8px;
+        margin: 4px 0;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        cursor: pointer;
+    }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -296,14 +307,43 @@ def ask_groq(context, history, query):
         return resp.json()['choices'][0]['message']['content']
     except: return "Connection error."
 
-# --- CHAT HISTORY ---
+# --- CHAT HISTORY & PERSISTENCE ---
+
 def load_chat_history(chat_id):
     try: return supabase.table("messages").select("*").eq("chat_id", chat_id).order("created_at").execute().data
     except: return []
 
-def save_message(chat_id, role, content, sources=None):
-    try: supabase.table("messages").insert({"chat_id": chat_id, "role": role, "content": content, "sources": sources}).execute()
+def save_message(chat_id, role, content, company_id, sources=None):
+    try: 
+        # UPDATED: We now save 'company_id' so we can find these chats later
+        supabase.table("messages").insert({
+            "chat_id": chat_id, 
+            "role": role, 
+            "content": content, 
+            "sources": sources,
+            "company_id": company_id 
+        }).execute()
     except: pass
+
+def get_recent_chats(company_id):
+    # Retrieve the last 50 messages to find unique chat IDs
+    try:
+        res = supabase.table("messages").select("chat_id, content, created_at").eq("company_id", company_id).order("created_at", desc=True).limit(50).execute()
+
+        seen_ids = set()
+        unique_chats = []
+
+        for msg in res.data:
+            if msg['chat_id'] not in seen_ids:
+                seen_ids.add(msg['chat_id'])
+                # Use the first message we find as the "Title" preview
+                unique_chats.append({
+                    "id": msg['chat_id'],
+                    "title": msg['content'][:30] + "..."
+                })
+        return unique_chats[:10] # Return top 10 recent chats
+    except:
+        return []
 
 # --- UI PAGES ---
 def render_sidebar():
@@ -311,13 +351,31 @@ def render_sidebar():
         st.title("⚡ FRIDAY")
         st.caption(f"ID: {st.session_state.company_id}")
         st.markdown("---")
+
+        # Navigation
         if st.button("💬 Chat", use_container_width=True, type="primary" if st.session_state.view == "chat" else "secondary"):
             st.session_state.view = "chat"; st.rerun()
         if st.button("📂 Documents", use_container_width=True, type="primary" if st.session_state.view == "documents" else "secondary"):
             st.session_state.view = "documents"; st.rerun()
+
         st.markdown("---")
+
+        # Action: New Chat
         if st.session_state.view == "chat":
-            if st.button("➕ New Chat", use_container_width=True): create_new_chat(); st.rerun()
+            if st.button("➕ New Chat", use_container_width=True): 
+                create_new_chat(); st.rerun()
+
+            st.markdown("### Recent Chats")
+            recent = get_recent_chats(st.session_state.company_id)
+            if not recent:
+                st.caption("No history found.")
+            else:
+                for chat in recent:
+                    # Unique key needed for each button
+                    if st.button(f"📝 {chat['title']}", key=chat['id'], use_container_width=True):
+                        st.session_state.current_chat_id = chat['id']
+                        st.rerun()
+
         st.markdown("---")
         if st.button("Log Out"): st.session_state.clear(); st.rerun()
 
@@ -325,16 +383,16 @@ def create_new_chat(): st.session_state.current_chat_id = str(uuid.uuid4())
 
 # --- HELPER: HANDLE QUERY EXECUTION ---
 def handle_query(query):
-    # Save user msg
-    save_message(st.session_state.current_chat_id, "user", query)
+    # Save user msg with COMPANY ID
+    save_message(st.session_state.current_chat_id, "user", query, st.session_state.company_id)
 
     # Process
     history = load_chat_history(st.session_state.current_chat_id)
     context, sources = get_relevant_context(query, st.session_state.company_id)
     response = ask_groq(context, history, query)
 
-    # Save AI msg
-    save_message(st.session_state.current_chat_id, "assistant", response, sources)
+    # Save AI msg with COMPANY ID
+    save_message(st.session_state.current_chat_id, "assistant", response, st.session_state.company_id, sources)
     st.rerun()
 
 def chat_page():
