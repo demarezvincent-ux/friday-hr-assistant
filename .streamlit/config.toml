@@ -1,6 +1,6 @@
 [theme]
 base="light"
-primaryColor="#D97757"      # Terracotta
+primaryColor="#8FAE8B"      # Sage Green Pastel
 backgroundColor="#FAF9F6"   # Warm Paper
 secondaryBackgroundColor="#EBE9E4" # <--- CHANGED: Slightly darker/warmer for better contrast
 textColor="#2C2C2C"         # <--- CHANGED: Slightly darker for sharper text

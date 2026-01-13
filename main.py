@@ -55,15 +55,15 @@ st.markdown("""
         border: 1px solid #E0E0E0;
     }
 
-    /* Primary Button (Terracotta) */
+    /* Primary Button (Sage Green) */
     div[data-testid="stButton"] > button[kind="primary"] {
-        background-color: #D97757 !important;
+        background-color: #8FAE8B !important;
         border: none;
         color: white !important;
-        box-shadow: 0 4px 6px rgba(217, 119, 87, 0.2);
+        box-shadow: 0 4px 6px rgba(143, 174, 139, 0.25);
     }
     div[data-testid="stButton"] > button[kind="primary"]:hover {
-        background-color: #C06345 !important;
+        background-color: #7A9A76 !important;
         transform: translateY(-1px);
     }
 
@@ -88,7 +88,7 @@ st.markdown("""
         display: inline-flex;
         align-items: center;
     }
-    .source-tag:hover { border-color: #D97757; color: #D97757; }
+    .source-tag:hover { border-color: #8FAE8B; color: #6B8E68; }
 
     /* 8. Sidebar History Buttons */
     .history-btn {
@@ -156,6 +156,28 @@ def get_embeddings_batch(texts):
 def sanitize_filename(filename):
     name = filename.replace(" ", "_")
     return re.sub(r'[^a-zA-Z0-9._-]', '', name)
+
+def normalize_query(query):
+    """Normalize query to handle compound word variations (e.g., 'koffie machine' -> 'koffiemachine')."""
+    # Common Dutch compound word patterns that should be joined
+    compound_patterns = [
+        (r'\bkoffie\s+machine\b', 'koffiemachine'),
+        (r'\bkoffie\s*-\s*machine\b', 'koffiemachine'),
+        (r'\bwacht\s+woord\b', 'wachtwoord'),
+        (r'\bwacht\s*-\s*woord\b', 'wachtwoord'),
+        (r'\btijd\s+registratie\b', 'tijdregistratie'),
+        (r'\bverlof\s+dagen\b', 'verlofdagen'),
+        (r'\bwerk\s+uren\b', 'werkuren'),
+        (r'\bziekte\s+verlof\b', 'ziekteverlof'),
+    ]
+    
+    normalized = query.lower()
+    for pattern, replacement in compound_patterns:
+        normalized = re.sub(pattern, replacement, normalized, flags=re.IGNORECASE)
+    
+    # Also create a version with compound words split for broader matching
+    # Return both the original query and normalized version combined
+    return f"{query} {normalized}".strip()
 
 # [FIX 2] Markdown Table Extraction
 def extract_text_from_pdf(file):
@@ -263,19 +285,24 @@ def process_and_store_document(file, company_id, force_overwrite=False):
     register_document(clean_name, company_id)
     return "success"
 
-# [FIX 3] Cross-Lingual Search
+# [FIX 3] Cross-Lingual Search with Query Normalization
 def get_relevant_context(query, company_id):
-    search_query = query
+    # Normalize query to handle compound word variations
+    normalized_query = normalize_query(query)
+    search_query = normalized_query
+    
     try:
-        expansion_prompt = f"Translate '{query}' into English, Dutch, and French keywords. Output ONLY keywords string."
+        expansion_prompt = f"Translate '{normalized_query}' into English, Dutch, and French keywords. Output ONLY keywords string."
         resp = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization": f"Bearer {FIXED_GROQ_KEY}"},
             json={"model": "llama-3.3-70b-versatile", "messages": [{"role": "user", "content": expansion_prompt}], "temperature": 0.1, "max_tokens": 100},
             timeout=3
         )
-        if resp.status_code == 200: search_query = resp.json()['choices'][0]['message']['content']
-    except: pass
+        if resp.status_code == 200: 
+            search_query = resp.json()['choices'][0]['message']['content']
+    except Exception:
+        pass
 
     vectors = get_embeddings_batch([search_query])
     if not vectors: return "", []
