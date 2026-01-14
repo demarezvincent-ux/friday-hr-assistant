@@ -16,17 +16,17 @@ st.set_page_config(page_title="FRIDAY", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
     /* ============================================
-       FRIDAY - Apple-Inspired Design System
+       FRIDAY - Premium Design System
        ============================================ */
     
-    /* 1. Typography - SF Pro with Inter fallback */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+    /* 1. Typography - Playfair Display for headings, Inter for body */
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
 
     :root {
-        /* Brand Colors */
-        --primary: #00BFA5;
-        --primary-hover: #00897B;
-        --primary-gradient: linear-gradient(135deg, #00BFA5 0%, #00897B 100%);
+        /* Brand Colors - Deep Forest Green */
+        --primary: #1A3C34;
+        --primary-hover: #0F2921;
+        --primary-gradient: linear-gradient(135deg, #1A3C34 0%, #0F2921 100%);
         
         /* Neutral Colors */
         --bg-primary: #F5F5F7;
@@ -38,6 +38,7 @@ st.markdown("""
         --text-primary: #1D1D1F;
         --text-secondary: #6E6E73;
         --text-tertiary: #86868B;
+        --text-on-primary: #FFFFFF;
         
         /* Border & Divider */
         --border-color: #D2D2D7;
@@ -61,7 +62,7 @@ st.markdown("""
 
     /* Global Reset & Typography */
     html, body, [class*="css"] {
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', sans-serif;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
         color: var(--text-primary);
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
@@ -229,7 +230,7 @@ st.markdown("""
     .stTextInput > div > div > input:focus {
         border-color: var(--primary) !important;
         border-width: 2px !important;
-        box-shadow: 0 0 0 4px rgba(0, 191, 165, 0.1) !important;
+        box-shadow: 0 0 0 4px rgba(26, 60, 52, 0.1) !important;
     }
     
     .stTextInput > div > div > input::placeholder {
@@ -257,7 +258,7 @@ st.markdown("""
     .stChatInput > div > div > textarea:focus {
         background-color: var(--bg-white);
         border-color: var(--primary) !important;
-        box-shadow: 0 0 0 4px rgba(0, 191, 165, 0.1) !important;
+        box-shadow: 0 0 0 4px rgba(26, 60, 52, 0.1) !important;
     }
     
     .stChatInput > div > div > textarea::placeholder {
@@ -268,21 +269,21 @@ st.markdown("""
     .stButton > button[kind="primary"],
     button[kind="primary"] {
         background: var(--primary-gradient) !important;
-        color: white !important;
+        color: var(--text-on-primary) !important;
         border: none !important;
         border-radius: 10px;
         height: 52px;
         font-size: 17px;
         font-weight: 600;
         padding: 0 24px;
-        box-shadow: 0 2px 8px rgba(0, 191, 165, 0.3);
+        box-shadow: 0 2px 8px rgba(26, 60, 52, 0.3);
         transition: var(--transition-normal);
     }
 
     .stButton > button[kind="primary"]:hover,
     button[kind="primary"]:hover {
         transform: translateY(-1px);
-        box-shadow: 0 4px 16px rgba(0, 191, 165, 0.4) !important;
+        box-shadow: 0 4px 16px rgba(26, 60, 52, 0.4) !important;
     }
 
     .stButton > button[kind="primary"]:active,
@@ -849,13 +850,8 @@ def get_dynamic_greeting():
 # --- UI PAGES ---
 def render_sidebar():
     with st.sidebar:
-        # Logo Section
-        try:
-            st.image("assets/logo.png", width=48)
-        except:
-            st.markdown('<div class="logo-gradient" style="font-size: 24px; margin-bottom: 8px;">Friday</div>', unsafe_allow_html=True)
-            
-        st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
+        # Logo Section - Text only
+        st.markdown('<div style="font-family: Playfair Display, serif; font-size: 28px; font-weight: 700; color: #1A3C34; margin-bottom: 24px;">Friday</div>', unsafe_allow_html=True)
 
         # Navigation Menu
         st.markdown("### Menu")
@@ -1005,7 +1001,6 @@ def documents_page():
         if not docs: 
             st.info("No documents uploaded yet.")
         else:
-            st.markdown('<div class="file-card">', unsafe_allow_html=True)
             for doc in docs:
                 # Determine file type icon and color
                 filename = doc['filename']
@@ -1042,7 +1037,6 @@ def documents_page():
                         if st.button("×", key=f"del_{doc['id']}", help="Delete document"):
                             delete_document(doc['filename'], st.session_state.company_id)
                             st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
 
 # --- 5. AUTHENTICATION ---
 def login_page():
@@ -1052,14 +1046,11 @@ def login_page():
         # Hero Section with clean headline
         st.markdown("""
         <div style="text-align: center; margin-bottom: 48px;">
-            <div class="logo-gradient" style="margin-bottom: 48px;">Friday</div>
+            <div style="font-family: 'Playfair Display', serif; font-size: 36px; font-weight: 700; color: #1A3C34; margin-bottom: 48px;">Friday</div>
             <h1 class="hero-title">Your Intelligent<br>HR Companion</h1>
             <p class="hero-subtitle">Streamline HR tasks with AI-powered assistance</p>
         </div>
         """, unsafe_allow_html=True)
-        
-        # Login Form Container
-        st.markdown('<div class="login-container">', unsafe_allow_html=True)
         
         with st.form("login_form"):
             pw = st.text_input("Access Code", type="password", placeholder="Enter your access code")
@@ -1073,8 +1064,6 @@ def login_page():
                         st.rerun()
                     else: st.error("Invalid Access Code")
                 except Exception as e: st.error(f"Login Error: {e}")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
 
 if not st.session_state.authenticated: login_page()
 else:
