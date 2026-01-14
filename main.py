@@ -15,120 +15,103 @@ st.set_page_config(page_title="FRIDAY", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
-    /* 1. Global Font & Background - Paper Theme */
-    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500&display=swap');
+    /* 1. Global Font & Variables */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+    :root {
+        --primary: #059669;
+        --primary-hover: #047857;
+        --secondary: #34d399;
+        --accent: #d4fc79;
+        --bg-color: #fafafa;
+        --sidebar-bg: #1f2937;
+        --text-color: #1f2937;
+        --text-light: #6b7280;
+        --border-color: #e5e7eb;
+        --error: #ef4444;
+        --warning: #f59e0b;
+        --success: #22c55e;
+    }
+
+    /* Global Reset & Typography */
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+        color: var(--text-color);
+    }
 
     .stApp {
-        background-color: #F9F8F4; /* Paper */
-        font-family: 'Inter', sans-serif;
+        background-color: var(--bg-color);
     }
 
-    /* 2. Sidebar - Deep Pine Foundation */
-    section[data-testid="stSidebar"] {
-        background-color: #1A3C34; /* Deep Pine */
+    /* 2. Sidebar Styling */
+    [data-testid="stSidebar"] {
+        background-color: var(--sidebar-bg);
         border-right: none;
     }
-    section[data-testid="stSidebar"] h1, 
-    section[data-testid="stSidebar"] h2, 
-    section[data-testid="stSidebar"] h3, 
-    section[data-testid="stSidebar"] span, 
-    section[data-testid="stSidebar"] div,
-    section[data-testid="stSidebar"] label {
-        color: #F9F8F4 !important; /* Paper text on Deep Pine */
+
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {
+        color: #f3f4f6;
     }
     
-    /* Sidebar separator */
-    section[data-testid="stSidebar"] hr {
-        border-color: #F9F8F4;
-        opacity: 0.2;
-    }
-
-    /* 3. Typography - Playfair Display */
-    h1, h2, h3 {
-        font-family: 'Playfair Display', serif !important;
-        color: #1A3C34; /* Deep Pine for headers */
-        letter-spacing: -0.5px;
-    }
-
-    /* 4. Chat Interface - Apple/ChatGPT Minimalist */
-    div[data-testid="stChatMessage"] {
+    [data-testid="stSidebar"] .stButton button {
         background-color: transparent;
+        color: #e5e7eb;
         border: none;
-        padding: 0rem; 
-        margin-bottom: 1.5rem;
-        box-shadow: none;
-    }
-    
-    /* User Message Bubble */
-    div[data-testid="stChatMessage"][data-testid="user"] > div {
-        background-color: #F0F2F6; /* Light gray for user */
-        padding: 1rem 1.25rem;
-        border-radius: 18px 18px 4px 18px; /* Speech bubble shape */
-        color: #2B2B2B;
-        max-width: 80%;
-        margin-left: auto; /* Right align bubble */
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-    }
-    
-    /* AI Message Bubble */
-    div[data-testid="stChatMessage"][data-testid="assistant"] > div {
-        background-color: #FFFFFF; /* White for AI */
-        padding: 1rem 1.25rem;
-        border-radius: 18px 18px 18px 4px; /* Speech bubble shape */
-        color: #2B2B2B;
-        max-width: 90%;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        border: 1px solid #E5E5E5;
+        text-align: left;
+        padding: 0.5rem 1rem;
+        transition: all 0.2s;
     }
 
-    /* Avatars */
-    div[data-testid="stChatMessage"] .st-emotion-cache-1p1m4t5 {
-        background-color: transparent !important; /* Remove avatar background */
-    }
-    
-    /* 5. Buttons - Electric Matcha Spark */
-    .stButton > button {
-        border-radius: 99px !important; /* Pill shape */
-        font-family: 'Inter', sans-serif;
-        font-weight: 500;
-        transition: all 0.3s ease;
-        border: 1px solid transparent;
-        color: #2B2B2B !important; /* Graphite Text */
+    [data-testid="stSidebar"] .stButton button:hover {
+        background-color: rgba(255,255,255,0.05);
+        color: #ffffff;
     }
 
-    /* Primary Button */
-    div[data-testid="stButton"] > button[kind="primary"] {
-        background-color: #D1F072 !important; /* Electric Matcha */
-        color: #2B2B2B !important; /* Graphite */
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        font-weight: 600;
-    }
-    div[data-testid="stButton"] > button[kind="primary"]:hover {
-        background-color: #BFDC65 !important;
-        transform: translateY(-1px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-    }
+    /* Active Navigation Button Style (Custom Logic Needed in Python to apply exact class, but using attribute selector for now) */
+    /* Note: Streamlit doesn't easily allow adding classes to buttons directly, so we rely on 'kind' or position */
     
-    /* Secondary Button */
-    div[data-testid="stButton"] > button[kind="secondary"] {
+    div[data-testid="stSidebar"] button[kind="primary"] {
+        background-color: var(--primary) !important;
+        color: white !important;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    div[data-testid="stSidebar"] button[kind="secondary"] {
         background-color: transparent !important;
-        border: 1px solid #E0E0E0;
-        color: #1A3C34 !important;
-    }
-    div[data-testid="stButton"] > button[kind="secondary"]:hover {
-        border-color: #1A3C34;
-        background-color: rgba(26, 60, 52, 0.05) !important;
+        color: #d1d5db !important;
     }
 
-    /* 6. Inputs & Text Areas - High Contrast Fix */
+    /* Recent Chats - Card Style */
+    .chat-card {
+        background-color: rgba(255,255,255,0.03);
+        border-radius: 8px;
+        padding: 8px 12px;
+        margin-bottom: 8px;
+        border: 1px solid rgba(255,255,255,0.1);
+        color: #e5e7eb;
+        font-size: 0.9rem;
+    }
+
+    /* 3. Main Area Styling */
+    
+    /* Header/Hero */
+    h1 {
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: var(--text-color);
+    }
+
+    /* Inputs */
     .stTextInput > div > div > input, 
     .stChatInput > div > div > textarea {
-        background-color: #FFFFFF !important; /* Force White */
-        border: 1px solid #E0E0E0 !important;
-        border-radius: 12px;
-        color: #2B2B2B !important; /* Force Graphite Text */
-        caret-color: #2B2B2B !important;
+        background-color: #ffffff;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-color);
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     }
+
     .stTextInput > div > div > input:focus, 
     .stChatInput > div > div > textarea:focus {
         border-color: #1A3C34 !important;
@@ -508,14 +491,14 @@ def get_dynamic_greeting():
 def render_sidebar():
     with st.sidebar:
         try:
-            st.image("assets/logo.png", use_container_width=True)
+            st.image("assets/logo.png", width=60)
         except:
-            st.title("Friday")
-        st.caption("v1.1 (Fallback System Active)")
-        st.caption(f"ID: {st.session_state.company_id}")
-        st.markdown("---")
+            st.markdown("<h1 style='color: white; margin: 0; font-size: 24px;'>Friday</h1>", unsafe_allow_html=True)
+            
+        st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True) # Spacer
 
         # Navigation
+        st.markdown("### Menu")
         if st.button("💬 Chat", use_container_width=True, type="primary" if st.session_state.view == "chat" else "secondary"):
             st.session_state.view = "chat"; st.rerun()
         if st.button("📂 Documents", use_container_width=True, type="primary" if st.session_state.view == "documents" else "secondary"):
@@ -525,7 +508,7 @@ def render_sidebar():
 
         # Action: New Chat
         if st.session_state.view == "chat":
-            if st.button("➕ New Chat", use_container_width=True): 
+            if st.button("➕ New Chat", use_container_width=True, type="primary"): 
                 create_new_chat(); st.rerun()
 
             st.markdown("### Recent Chats")
@@ -534,21 +517,25 @@ def render_sidebar():
                 st.caption("No history found.")
             else:
                 for chat in recent:
-                    col1, col2 = st.columns([4, 1])
-                    with col1:
-                        if st.button(f"📝 {chat['title']}", key=f"chat_{chat['id']}", use_container_width=True):
-                            st.session_state.current_chat_id = chat['id']
-                            st.rerun()
-                    with col2:
-                        if st.button("🗑️", key=f"del_{chat['id']}", help="Delete chat"):
-                            delete_chat(chat['id'], st.session_state.company_id)
-                            # If deleting current chat, create new one
-                            if st.session_state.current_chat_id == chat['id']:
-                                create_new_chat()
-                            st.rerun()
+                    # Truncate title for display
+                    display_title = (chat['title'][:35] + '..') if len(chat['title']) > 35 else chat['title']
+                    
+                    with st.container():
+                        col1, col2 = st.columns([5, 1])
+                        with col1:
+                            if st.button(f"{display_title}", key=f"chat_{chat['id']}", help=chat['title'], use_container_width=True):
+                                st.session_state.current_chat_id = chat['id']
+                                st.rerun()
+                        with col2:
+                            if st.button("✕", key=f"del_{chat['id']}", help="Delete chat"):
+                                delete_chat(chat['id'], st.session_state.company_id)
+                                if st.session_state.current_chat_id == chat['id']:
+                                    create_new_chat()
+                                st.rerun()
+                    st.markdown("<div style='margin-bottom: 4px;'></div>", unsafe_allow_html=True)
 
         st.markdown("---")
-        if st.button("Log Out"): st.session_state.clear(); st.rerun()
+        if st.button("Log Out", use_container_width=True): st.session_state.clear(); st.rerun()
 
 def create_new_chat(): st.session_state.current_chat_id = str(uuid.uuid4())
 
@@ -592,9 +579,9 @@ def chat_page():
     if not history:
         greeting = get_dynamic_greeting()
         st.markdown(f"""
-        <div style="text-align: center; margin-top: 5rem; margin-bottom: 2rem;">
-            <h1 style="font-size: 3rem; margin-bottom: 0.5rem; font-family: 'Playfair Display', serif;">{greeting}</h1>
-            <p style="color: #666; font-family: 'Inter', sans-serif;">How can FRIDAY help you with HR tasks today?</p>
+        <div style="text-align: center; margin-top: 4rem; margin-bottom: 3rem;">
+            <h1 style="font-size: 2.2rem; margin-bottom: 0.5rem; font-weight: 600; color: #111827;">{greeting}</h1>
+            <p style="color: #6b7280; font-size: 1.1rem;">How can FRIDAY help you with HR tasks today?</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -603,7 +590,7 @@ def chat_page():
         if msg["role"] == "assistant":
             avatar = "⚡"
         else:
-            avatar = "👤" # Modern User Avatar
+            avatar = None # Use default or we can add a custom image path here
             
         with st.chat_message(msg["role"], avatar=avatar):
             st.write(msg["content"])
@@ -616,42 +603,79 @@ def chat_page():
         handle_query(prompt)
 
 def documents_page():
-    st.title("📂 Knowledge Base")
+    st.title("Knowledge Base")
+    
+    # Page-specific CSS for File Uploader and Rows
+    st.markdown("""
+        <style>
+        [data-testid="stFileUploader"] {
+            border: 2px dashed #d1d5db;
+            background-color: #f9fafb;
+            border-radius: 12px;
+            padding: 2rem;
+            transition: all 0.2s;
+        }
+        [data-testid="stFileUploader"]:hover {
+            border-color: #059669;
+            background-color: #f0fdf4;
+        }
+        .uploadedFileName {
+            color: #374151;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        st.subheader("Upload")
-        uploaded_files = st.file_uploader("Upload PDF/DOCX", type=["pdf", "docx"], accept_multiple_files=True)
-        force_overwrite = st.checkbox("Overwrite existing files?")
-        if uploaded_files and st.button("Index Files", type="primary"):
-            for f in uploaded_files:
-                with st.spinner(f"Processing {f.name}..."):
-                    status = process_and_store_document(f, st.session_state.company_id, force_overwrite)
-                    if status == "success": st.toast(f"✅ Indexed: {f.name}")
-                    elif status == "exists": st.warning(f"⚠️ {f.name} exists.")
-                    else: st.error(f"❌ Error: {f.name}")
-            time.sleep(1)
-            st.rerun()
+        st.subheader("Upload Documents")
+        uploaded_files = st.file_uploader("Drag and drop PDF/DOCX files here", type=["pdf", "docx"], accept_multiple_files=True)
+        
+        c_check, c_btn = st.columns([1, 1])
+        with c_check:
+            force_overwrite = st.checkbox("Overwrite existing files?")
+        with c_btn:
+            if uploaded_files:
+                if st.button("Start Indexing", type="primary", use_container_width=True):
+                    for f in uploaded_files:
+                        with st.spinner(f"Processing {f.name}..."):
+                            status = process_and_store_document(f, st.session_state.company_id, force_overwrite)
+                            if status == "success": st.toast(f"✅ Indexed: {f.name}")
+                            elif status == "exists": st.warning(f"⚠️ {f.name} exists.")
+                            else: st.error(f"❌ Error: {f.name}")
+                    time.sleep(1)
+                    st.rerun()
 
     with col2:
-        st.subheader("Indexed Documents")
+        st.subheader("Indexed Files")
         docs = get_all_documents(st.session_state.company_id)
-        if not docs: st.info("No documents found.")
+        if not docs: 
+            st.info("No documents found.")
         else:
             for doc in docs:
+                status_color = "#22c55e" if doc['is_active'] else "#9ca3af"
+                opacity = "1" if doc['is_active'] else "0.6"
+                
                 with st.container():
-                    c1, c2, c3 = st.columns([3, 1, 1])
-                    icon = "🟢" if doc['is_active'] else "🔴"
-                    style = "" if doc['is_active'] else "text-decoration: line-through; color: gray;"
-                    c1.markdown(f"{icon} <span style='{style}'>{doc['filename']}</span>", unsafe_allow_html=True)
+                    c1, c2, c3 = st.columns([5, 1, 1])
+                    with c1:
+                        st.markdown(f"""
+                        <div style="display: flex; align-items: center; opacity: {opacity}; padding-top: 8px;">
+                            <span style="color: {status_color}; margin-right: 8px; font-size: 0.8rem;">●</span>
+                            <span style="font-weight: 500; color: #374151; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{doc['filename']}">{doc['filename']}</span>
+                        </div>
+                        """, unsafe_allow_html=True)
 
-                    if c2.button("📦", key=f"arch_{doc['id']}", help="Archive"):
-                        toggle_document_status(doc['filename'], st.session_state.company_id, doc['is_active'])
-                        st.rerun()
-                    if c3.button("🗑️", key=f"del_{doc['id']}"):
-                        delete_document(doc['filename'], st.session_state.company_id)
-                        st.rerun()
-                    st.divider()
+                    with c2:
+                        if st.button("📦", key=f"arch_{doc['id']}", help="Toggle Status"):
+                            toggle_document_status(doc['filename'], st.session_state.company_id, doc['is_active'])
+                            st.rerun()
+                    with c3:
+                        if st.button("✕", key=f"del_{doc['id']}", help="Delete"):
+                            delete_document(doc['filename'], st.session_state.company_id)
+                            st.rerun()
+                    
+                    st.markdown("<hr style='margin: 0.5rem 0; border-color: #f3f4f6;'>", unsafe_allow_html=True)
 
 # --- 5. AUTHENTICATION ---
 def login_page():
@@ -660,16 +684,16 @@ def login_page():
     with col2:
         # Recreated "Friday" Card (CSS Only)
         st.markdown("""
-        <div style="background-color: #1A3C34; padding: 4rem 2rem; border-radius: 12px; text-align: center; margin-bottom: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
-            <div style="font-family: 'Playfair Display', serif; font-size: 1.5rem; color: #FFFFFF; font-style: italic; margin-bottom: 2rem;">
-                Because let’s be honest, <span style="font-style: italic; font-family: 'Playfair Display', serif;">nobody</span> remembers page 42.
+        <div class="login-container" style="background-color: #1a4d2e; padding: 3rem 2rem; border-radius: 16px; text-align: center; margin-bottom: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <div style="font-family: 'Inter', sans-serif; font-size: 1.1rem; color: #d1fae5; font-style: italic; margin-bottom: 2rem; font-weight: 300;">
+                Because let’s be honest, <span style="font-weight: 600; color: #ffffff;">nobody</span> remembers page 42.
             </div>
-            <div style="font-family: 'Playfair Display', serif; font-size: 1.8rem; font-weight: 700; color: #D1F072;">
+            <div style="font-family: 'Inter', sans-serif; font-size: 1.5rem; font-weight: 700; color: #34d399;">
                 We do.
             </div>
         </div>
-        <div style="text-align: center; margin-top: -1rem; margin-bottom: 2rem;">
-             <h1 style="font-family: 'Playfair Display', serif; font-size: 3rem; color: #1A3C34;">Friday</h1>
+        <div style="text-align: center; margin-top: 0rem; margin-bottom: 2rem;">
+             <h1 style="font-family: 'Inter', sans-serif; font-size: 2.5rem; font-weight: 800; color: #059669; letter-spacing: -1px;">Friday</h1>
         </div>
         """, unsafe_allow_html=True)
         

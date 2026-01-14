@@ -1,10 +1,10 @@
 [theme]
 base="light"
-primaryColor="#D1F072"      # Electric Matcha
-backgroundColor="#F9F8F4"     # Paper
-secondaryBackgroundColor="#1A3C34" # Deep Pine
-textColor="#2B2B2B"           # Graphite
-font="serif"
+primaryColor="#059669"      # Brand Primary
+backgroundColor="#FAFAFA"     # Clean White/Grey
+secondaryBackgroundColor="#1F2937" # Dark Sidebar
+textColor="#1F2937"           # Dark Grey Text
+font="sans serif"
 
 [server]
 enableCORS = false
