@@ -15,147 +15,506 @@ st.set_page_config(page_title="FRIDAY", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
-    /* 1. Global Font & Variables */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    /* ============================================
+       FRIDAY - Apple-Inspired Design System
+       ============================================ */
+    
+    /* 1. Typography - SF Pro with Inter fallback */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
     :root {
-        --primary: #059669;
-        --primary-hover: #047857;
-        --secondary: #34d399;
-        --accent: #d4fc79;
-        --bg-color: #fafafa;
-        --sidebar-bg: #1f2937;
-        --text-color: #1f2937;
-        --text-light: #6b7280;
-        --border-color: #e5e7eb;
-        --error: #ef4444;
-        --warning: #f59e0b;
-        --success: #22c55e;
+        /* Brand Colors */
+        --primary: #00BFA5;
+        --primary-hover: #00897B;
+        --primary-gradient: linear-gradient(135deg, #00BFA5 0%, #00897B 100%);
+        
+        /* Neutral Colors */
+        --bg-primary: #F5F5F7;
+        --bg-secondary: #FAFAFA;
+        --bg-white: #FFFFFF;
+        --sidebar-bg: #F5F5F7;
+        
+        /* Text Colors */
+        --text-primary: #1D1D1F;
+        --text-secondary: #6E6E73;
+        --text-tertiary: #86868B;
+        
+        /* Border & Divider */
+        --border-color: #D2D2D7;
+        --border-light: rgba(0, 0, 0, 0.06);
+        --divider: rgba(0, 0, 0, 0.08);
+        
+        /* Semantic Colors */
+        --error: #FF3B30;
+        --warning: #FF9500;
+        --success: #34C759;
+        
+        /* Shadows */
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+        --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+        --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.08);
+        
+        /* Transitions */
+        --transition-fast: all 0.15s ease;
+        --transition-normal: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     /* Global Reset & Typography */
     html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-        color: var(--text-color);
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', sans-serif;
+        color: var(--text-primary);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
     }
 
     .stApp {
-        background-color: var(--bg-color);
+        background: linear-gradient(180deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+        min-height: 100vh;
     }
 
-    /* 2. Sidebar Styling */
+    /* ============================================
+       2. SIDEBAR - Apple Light Style
+       ============================================ */
     [data-testid="stSidebar"] {
         background-color: var(--sidebar-bg);
-        border-right: none;
+        border-right: 1px solid var(--divider);
+        width: 280px !important;
     }
 
-    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {
-        color: #f3f4f6;
+    [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+        padding: 20px 16px;
+    }
+
+    /* Sidebar Text - Dark on Light */
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3,
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] label {
+        color: var(--text-primary) !important;
+    }
+
+    /* Section Headers in Sidebar */
+    [data-testid="stSidebar"] h3 {
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        color: var(--text-tertiary) !important;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        margin: 24px 0 8px 0 !important;
     }
     
+    /* Sidebar Navigation Buttons */
     [data-testid="stSidebar"] .stButton button {
         background-color: transparent;
-        color: #e5e7eb;
+        color: var(--text-primary);
         border: none;
         text-align: left;
-        padding: 0.5rem 1rem;
-        transition: all 0.2s;
+        padding: 12px 16px;
+        height: 44px;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 500;
+        transition: var(--transition-fast);
     }
 
     [data-testid="stSidebar"] .stButton button:hover {
-        background-color: rgba(255,255,255,0.05);
-        color: #ffffff;
+        background-color: rgba(0, 0, 0, 0.05);
     }
 
-    /* Active Navigation Button Style (Custom Logic Needed in Python to apply exact class, but using attribute selector for now) */
-    /* Note: Streamlit doesn't easily allow adding classes to buttons directly, so we rely on 'kind' or position */
-    
+    /* Active Navigation Button */
     div[data-testid="stSidebar"] button[kind="primary"] {
-        background-color: var(--primary) !important;
-        color: white !important;
+        background: rgba(0, 191, 165, 0.1) !important;
+        color: var(--primary) !important;
         border-radius: 8px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        border-left: 3px solid var(--primary) !important;
+        font-weight: 600 !important;
     }
 
     div[data-testid="stSidebar"] button[kind="secondary"] {
         background-color: transparent !important;
-        color: #d1d5db !important;
+        color: var(--text-secondary) !important;
     }
 
-    /* Recent Chats - Card Style */
-    .chat-card {
-        background-color: rgba(255,255,255,0.03);
+    /* Sidebar Dividers */
+    [data-testid="stSidebar"] hr {
+        border: none;
+        border-top: 1px solid var(--divider);
+        margin: 16px 0;
+    }
+
+    /* Recent Chats Styling */
+    .recent-chat-item {
+        padding: 12px 16px;
         border-radius: 8px;
-        padding: 8px 12px;
-        margin-bottom: 8px;
-        border: 1px solid rgba(255,255,255,0.1);
-        color: #e5e7eb;
-        font-size: 0.9rem;
+        margin-bottom: 4px;
+        cursor: pointer;
+        transition: var(--transition-fast);
     }
-
-    /* 3. Main Area Styling */
     
-    /* Header/Hero */
-    h1 {
+    .recent-chat-item:hover {
+        background-color: rgba(0, 0, 0, 0.04);
+    }
+    
+    .recent-chat-item.active {
+        background-color: rgba(0, 191, 165, 0.08);
+        border-left: 3px solid var(--primary);
+    }
+
+    /* Logout Button - Destructive Style */
+    [data-testid="stSidebar"] .logout-btn button {
+        color: var(--error) !important;
+        font-weight: 500;
+    }
+    
+    [data-testid="stSidebar"] .logout-btn button:hover {
+        background-color: rgba(255, 59, 48, 0.1) !important;
+    }
+
+    /* ============================================
+       3. MAIN CONTENT AREA
+       ============================================ */
+    
+    /* Hero/Greeting Headers */
+    .hero-title {
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
+        font-size: 48px;
+        font-weight: 600;
+        color: var(--text-primary);
+        line-height: 1.1;
+        letter-spacing: -0.5px;
+        margin-bottom: 16px;
+    }
+    
+    .hero-subtitle {
+        font-size: 21px;
+        font-weight: 400;
+        color: var(--text-secondary);
+        line-height: 1.4;
+    }
+
+    .greeting-title {
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
+        font-size: 40px;
         font-weight: 700;
-        letter-spacing: -0.02em;
-        color: var(--text-color);
+        color: var(--text-primary);
+        margin-bottom: 12px;
+    }
+    
+    .greeting-subtitle {
+        font-size: 19px;
+        font-weight: 400;
+        color: var(--text-secondary);
+        line-height: 1.4;
     }
 
-    /* Inputs */
-    .stTextInput > div > div > input, 
-    .stChatInput > div > div > textarea {
-        background-color: #ffffff;
-        border: 1px solid var(--border-color);
-        border-radius: 8px;
-        color: var(--text-color);
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    /* ============================================
+       4. FORM ELEMENTS - Apple Style
+       ============================================ */
+    
+    /* Text Inputs */
+    .stTextInput > div > div > input {
+        background-color: var(--bg-white);
+        border: 1.5px solid var(--border-color);
+        border-radius: 10px;
+        color: var(--text-primary);
+        height: 52px;
+        padding: 0 16px;
+        font-size: 17px;
+        box-shadow: var(--shadow-sm);
+        transition: var(--transition-normal);
     }
 
-    .stTextInput > div > div > input:focus, 
-    .stChatInput > div > div > textarea:focus {
-        border-color: #1A3C34 !important;
-        box-shadow: 0 0 0 2px rgba(26, 60, 52, 0.1) !important;
-        color: #2B2B2B !important;
+    .stTextInput > div > div > input:focus {
+        border-color: var(--primary) !important;
+        border-width: 2px !important;
+        box-shadow: 0 0 0 4px rgba(0, 191, 165, 0.1) !important;
     }
-    .stTextInput > div > div > input::placeholder, 
-    .stChatInput > div > div > textarea::placeholder {
-        color: #666666 !important;
+    
+    .stTextInput > div > div > input::placeholder {
+        color: var(--text-tertiary) !important;
         opacity: 1;
     }
     
-    /* Remove default focus outline */
+    /* Hide helper text */
+    .stTextInput > div > div > div[data-baseweb="form-control-meta"] {
+        display: none;
+    }
+
+    /* Chat Input */
+    .stChatInput > div > div > textarea {
+        background-color: var(--bg-primary);
+        border: 1.5px solid transparent;
+        border-radius: 12px;
+        color: var(--text-primary);
+        min-height: 56px;
+        padding: 16px 56px 16px 20px;
+        font-size: 17px;
+        transition: var(--transition-normal);
+    }
+
+    .stChatInput > div > div > textarea:focus {
+        background-color: var(--bg-white);
+        border-color: var(--primary) !important;
+        box-shadow: 0 0 0 4px rgba(0, 191, 165, 0.1) !important;
+    }
+    
+    .stChatInput > div > div > textarea::placeholder {
+        color: var(--text-tertiary) !important;
+    }
+
+    /* Primary Buttons */
+    .stButton > button[kind="primary"],
+    button[kind="primary"] {
+        background: var(--primary-gradient) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 10px;
+        height: 52px;
+        font-size: 17px;
+        font-weight: 600;
+        padding: 0 24px;
+        box-shadow: 0 2px 8px rgba(0, 191, 165, 0.3);
+        transition: var(--transition-normal);
+    }
+
+    .stButton > button[kind="primary"]:hover,
+    button[kind="primary"]:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(0, 191, 165, 0.4) !important;
+    }
+
+    .stButton > button[kind="primary"]:active,
+    button[kind="primary"]:active {
+        transform: translateY(0);
+    }
+
+    /* Secondary Buttons */
+    .stButton > button[kind="secondary"] {
+        background-color: var(--bg-white);
+        color: var(--primary);
+        border: 1.5px solid var(--border-color);
+        border-radius: 10px;
+        height: 44px;
+        font-size: 15px;
+        font-weight: 500;
+        transition: var(--transition-fast);
+    }
+
+    .stButton > button[kind="secondary"]:hover {
+        border-color: var(--primary);
+        background-color: rgba(0, 191, 165, 0.04);
+    }
+
+    /* Remove focus outlines */
     *:focus-visible {
         outline: none !important;
     }
 
-    /* 7. Source Tags */
-    .source-container { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-    .source-tag {
-        font-family: 'Inter', sans-serif;
-        font-size: 0.75rem;
-        background-color: #F3F4F6;
-        border: 1px solid #E5E7EB;
-        padding: 4px 12px;
-        border-radius: 99px;
-        color: #4B5563;
-        display: inline-flex;
-        align-items: center;
-        transition: all 0.2s;
+    /* ============================================
+       5. CHAT MESSAGES - Modern Bubbles
+       ============================================ */
+    
+    /* User Messages */
+    [data-testid="stChatMessage"][data-testid*="user"] {
+        background: transparent;
     }
-    .source-tag:hover { 
-        border-color: #D1F072; 
-        color: #1A3C34; 
-        background-color: #EDF7D5;
+    
+    [data-testid="stChatMessage"][data-testid*="user"] > div {
+        background: var(--primary-gradient);
+        color: white;
+        border-radius: 18px 18px 4px 18px;
+        padding: 12px 16px;
+        max-width: 70%;
+        margin-left: auto;
+        box-shadow: 0 2px 8px rgba(0, 191, 165, 0.2);
     }
 
-    /* 8. Animations */
+    /* Assistant Messages */
+    [data-testid="stChatMessage"][data-testid*="assistant"] > div {
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
+        border-radius: 18px 18px 18px 4px;
+        padding: 12px 16px;
+        max-width: 70%;
+    }
+
+    /* ============================================
+       6. SOURCE TAGS
+       ============================================ */
+    .source-container { 
+        display: flex; 
+        flex-wrap: wrap; 
+        gap: 8px; 
+        margin-top: 12px; 
+    }
+    
+    .source-tag {
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', sans-serif;
+        font-size: 12px;
+        font-weight: 500;
+        background-color: var(--bg-white);
+        border: 1px solid var(--border-color);
+        padding: 6px 12px;
+        border-radius: 99px;
+        color: var(--text-secondary);
+        display: inline-flex;
+        align-items: center;
+        transition: var(--transition-fast);
+    }
+    
+    .source-tag:hover { 
+        border-color: var(--primary); 
+        color: var(--primary); 
+        background-color: rgba(0, 191, 165, 0.04);
+    }
+
+    /* ============================================
+       7. LOGIN PAGE SPECIFIC
+       ============================================ */
+    .login-container {
+        background: var(--bg-white);
+        border-radius: 16px;
+        padding: 48px 40px;
+        max-width: 440px;
+        margin: 0 auto;
+        box-shadow: var(--shadow-lg);
+        border: 1px solid var(--border-light);
+    }
+
+    .logo-gradient {
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
+        font-size: 36px;
+        font-weight: 700;
+        background: var(--primary-gradient);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        letter-spacing: -1px;
+    }
+
+    /* ============================================
+       8. FILE UPLOADER - Documents Page
+       ============================================ */
+    [data-testid="stFileUploader"] {
+        border: 2px dashed var(--border-color);
+        background-color: var(--bg-secondary);
+        border-radius: 12px;
+        padding: 2rem;
+        transition: var(--transition-normal);
+    }
+    
+    [data-testid="stFileUploader"]:hover {
+        border-color: var(--primary);
+        background-color: rgba(0, 191, 165, 0.04);
+        transform: scale(1.01);
+    }
+
+    /* File List Cards */
+    .file-card {
+        background: var(--bg-white);
+        border-radius: 12px;
+        padding: 8px;
+        box-shadow: var(--shadow-md);
+        border: 1px solid var(--border-light);
+    }
+    
+    .file-item {
+        display: flex;
+        align-items: center;
+        padding: 12px 16px;
+        border-radius: 8px;
+        transition: var(--transition-fast);
+    }
+    
+    .file-item:hover {
+        background-color: var(--bg-primary);
+    }
+
+    /* File Type Icons */
+    .file-icon-pdf { color: #FF3B30; }
+    .file-icon-docx { color: #007AFF; }
+    .file-icon-default { color: var(--text-tertiary); }
+
+    /* iOS-style Toggle */
+    .ios-toggle input[type="checkbox"] {
+        appearance: none;
+        width: 52px;
+        height: 32px;
+        background-color: #E5E5EA;
+        border-radius: 16px;
+        position: relative;
+        cursor: pointer;
+        transition: var(--transition-normal);
+    }
+    
+    .ios-toggle input[type="checkbox"]:checked {
+        background-color: var(--primary);
+    }
+    
+    .ios-toggle input[type="checkbox"]::before {
+        content: '';
+        position: absolute;
+        width: 28px;
+        height: 28px;
+        background-color: white;
+        border-radius: 50%;
+        top: 2px;
+        left: 2px;
+        transition: var(--transition-normal);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+    
+    .ios-toggle input[type="checkbox"]:checked::before {
+        transform: translateX(20px);
+    }
+
+    /* ============================================
+       9. ANIMATIONS
+       ============================================ */
     @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(5px); }
+        from { opacity: 0; transform: translateY(8px); }
         to { opacity: 1; transform: translateY(0); }
     }
+    
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    
+    @keyframes shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+    }
+
     .stMarkdown, .stButton, .stChatMessage {
         animation: fadeIn 0.3s ease-out forwards;
+    }
+    
+    .thinking-dots {
+        animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    /* ============================================
+       10. SCROLLBAR - Minimal Style
+       ============================================ */
+    ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background-color: var(--border-color);
+        border-radius: 3px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background-color: var(--text-tertiary);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -490,52 +849,58 @@ def get_dynamic_greeting():
 # --- UI PAGES ---
 def render_sidebar():
     with st.sidebar:
+        # Logo Section
         try:
-            st.image("assets/logo.png", width=60)
+            st.image("assets/logo.png", width=48)
         except:
-            st.markdown("<h1 style='color: white; margin: 0; font-size: 24px;'>Friday</h1>", unsafe_allow_html=True)
+            st.markdown('<div class="logo-gradient" style="font-size: 24px; margin-bottom: 8px;">Friday</div>', unsafe_allow_html=True)
             
-        st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True) # Spacer
+        st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
 
-        # Navigation
+        # Navigation Menu
         st.markdown("### Menu")
-        if st.button("💬 Chat", use_container_width=True, type="primary" if st.session_state.view == "chat" else "secondary"):
+        if st.button("◉  Chat", use_container_width=True, type="primary" if st.session_state.view == "chat" else "secondary"):
             st.session_state.view = "chat"; st.rerun()
-        if st.button("📂 Documents", use_container_width=True, type="primary" if st.session_state.view == "documents" else "secondary"):
+        if st.button("◎  Documents", use_container_width=True, type="primary" if st.session_state.view == "documents" else "secondary"):
             st.session_state.view = "documents"; st.rerun()
 
         st.markdown("---")
 
-        # Action: New Chat
+        # Chat-specific actions
         if st.session_state.view == "chat":
-            if st.button("➕ New Chat", use_container_width=True, type="primary"): 
+            if st.button("＋  New Chat", use_container_width=True, type="secondary"): 
                 create_new_chat(); st.rerun()
 
             st.markdown("### Recent Chats")
             recent = get_recent_chats(st.session_state.company_id)
             if not recent:
-                st.caption("No history found.")
+                st.caption("No conversations yet")
             else:
                 for chat in recent:
-                    # Truncate title for display
-                    display_title = (chat['title'][:35] + '..') if len(chat['title']) > 35 else chat['title']
+                    # Show more of the title
+                    display_title = (chat['title'][:45] + '…') if len(chat['title']) > 45 else chat['title']
+                    is_active = st.session_state.current_chat_id == chat['id']
                     
                     with st.container():
-                        col1, col2 = st.columns([5, 1])
+                        col1, col2 = st.columns([6, 1])
                         with col1:
-                            if st.button(f"{display_title}", key=f"chat_{chat['id']}", help=chat['title'], use_container_width=True):
+                            btn_type = "primary" if is_active else "secondary"
+                            if st.button(f"{display_title}", key=f"chat_{chat['id']}", help=chat['title'], use_container_width=True, type=btn_type):
                                 st.session_state.current_chat_id = chat['id']
                                 st.rerun()
                         with col2:
-                            if st.button("✕", key=f"del_{chat['id']}", help="Delete chat"):
+                            if st.button("×", key=f"del_{chat['id']}", help="Delete chat"):
                                 delete_chat(chat['id'], st.session_state.company_id)
                                 if st.session_state.current_chat_id == chat['id']:
                                     create_new_chat()
                                 st.rerun()
-                    st.markdown("<div style='margin-bottom: 4px;'></div>", unsafe_allow_html=True)
 
+        # Logout at bottom
         st.markdown("---")
-        if st.button("Log Out", use_container_width=True): st.session_state.clear(); st.rerun()
+        st.markdown('<div class="logout-btn">', unsafe_allow_html=True)
+        if st.button("↪  Sign Out", use_container_width=True): 
+            st.session_state.clear(); st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
 def create_new_chat(): st.session_state.current_chat_id = str(uuid.uuid4())
 
@@ -579,9 +944,9 @@ def chat_page():
     if not history:
         greeting = get_dynamic_greeting()
         st.markdown(f"""
-        <div style="text-align: center; margin-top: 4rem; margin-bottom: 3rem;">
-            <h1 style="font-size: 2.2rem; margin-bottom: 0.5rem; font-weight: 600; color: #111827;">{greeting}</h1>
-            <p style="color: #6b7280; font-size: 1.1rem;">How can FRIDAY help you with HR tasks today?</p>
+        <div style="text-align: center; margin-top: 80px; margin-bottom: 48px;">
+            <h1 class="greeting-title">{greeting}</h1>
+            <p class="greeting-subtitle">How can FRIDAY help you with HR tasks today?</p>
         </div>
         """, unsafe_allow_html=True)
 
@@ -599,36 +964,22 @@ def chat_page():
                 st.markdown(f"<div class='source-container'>{tags}</div>", unsafe_allow_html=True)
 
     # --- CHAT INPUT ---
-    if prompt := st.chat_input("Ask a question..."):
+    if prompt := st.chat_input("Ask FRIDAY anything..."):
         handle_query(prompt)
 
 def documents_page():
-    st.title("Knowledge Base")
-    
-    # Page-specific CSS for File Uploader and Rows
+    # Page Header with subtitle
     st.markdown("""
-        <style>
-        [data-testid="stFileUploader"] {
-            border: 2px dashed #d1d5db;
-            background-color: #f9fafb;
-            border-radius: 12px;
-            padding: 2rem;
-            transition: all 0.2s;
-        }
-        [data-testid="stFileUploader"]:hover {
-            border-color: #059669;
-            background-color: #f0fdf4;
-        }
-        .uploadedFileName {
-            color: #374151;
-        }
-        </style>
+    <div style="margin-bottom: 32px;">
+        <h1 style="font-size: 34px; font-weight: 700; color: #1D1D1F; margin-bottom: 8px;">Knowledge Base</h1>
+        <p style="font-size: 17px; color: #6E6E73;">Upload documents to enhance FRIDAY's knowledge</p>
+    </div>
     """, unsafe_allow_html=True)
     
-    col1, col2 = st.columns([2, 1])
+    col1, col2 = st.columns([3, 2], gap="large")
 
     with col1:
-        st.subheader("Upload Documents")
+        st.markdown("<h3 style='font-size: 20px; font-weight: 600; color: #1D1D1F; margin-bottom: 20px;'>Upload Documents</h3>", unsafe_allow_html=True)
         uploaded_files = st.file_uploader("Drag and drop PDF/DOCX files here", type=["pdf", "docx"], accept_multiple_files=True)
         
         c_check, c_btn = st.columns([1, 1])
@@ -647,59 +998,73 @@ def documents_page():
                     st.rerun()
 
     with col2:
-        st.subheader("Indexed Files")
         docs = get_all_documents(st.session_state.company_id)
+        file_count = len(docs) if docs else 0
+        st.markdown(f"<h3 style='font-size: 20px; font-weight: 600; color: #1D1D1F; margin-bottom: 20px;'>Indexed Files <span style='color: #86868B; font-weight: 400;'>({file_count})</span></h3>", unsafe_allow_html=True)
+        
         if not docs: 
-            st.info("No documents found.")
+            st.info("No documents uploaded yet.")
         else:
+            st.markdown('<div class="file-card">', unsafe_allow_html=True)
             for doc in docs:
-                status_color = "#22c55e" if doc['is_active'] else "#9ca3af"
+                # Determine file type icon and color
+                filename = doc['filename']
+                if filename.lower().endswith('.pdf'):
+                    file_icon = "◉"
+                    icon_class = "file-icon-pdf"
+                elif filename.lower().endswith('.docx'):
+                    file_icon = "◎"
+                    icon_class = "file-icon-docx"
+                else:
+                    file_icon = "○"
+                    icon_class = "file-icon-default"
+                
+                status_indicator = "●" if doc['is_active'] else "○"
+                status_color = "#34C759" if doc['is_active'] else "#86868B"
                 opacity = "1" if doc['is_active'] else "0.6"
                 
                 with st.container():
-                    c1, c2, c3 = st.columns([5, 1, 1])
+                    c1, c2, c3 = st.columns([6, 1, 1])
                     with c1:
                         st.markdown(f"""
-                        <div style="display: flex; align-items: center; opacity: {opacity}; padding-top: 8px;">
-                            <span style="color: {status_color}; margin-right: 8px; font-size: 0.8rem;">●</span>
-                            <span style="font-weight: 500; color: #374151; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{doc['filename']}">{doc['filename']}</span>
+                        <div class="file-item" style="opacity: {opacity};">
+                            <span class="{icon_class}" style="margin-right: 12px; font-size: 16px;">{file_icon}</span>
+                            <span style="font-weight: 500; color: #1D1D1F; font-size: 15px; flex: 1; overflow: hidden; text-overflow: ellipsis;" title="{filename}">{filename}</span>
+                            <span style="color: {status_color}; font-size: 10px; margin-left: 8px;">{status_indicator}</span>
                         </div>
                         """, unsafe_allow_html=True)
 
                     with c2:
-                        if st.button("📦", key=f"arch_{doc['id']}", help="Toggle Status"):
+                        if st.button("⏸", key=f"arch_{doc['id']}", help="Toggle active status"):
                             toggle_document_status(doc['filename'], st.session_state.company_id, doc['is_active'])
                             st.rerun()
                     with c3:
-                        if st.button("✕", key=f"del_{doc['id']}", help="Delete"):
+                        if st.button("×", key=f"del_{doc['id']}", help="Delete document"):
                             delete_document(doc['filename'], st.session_state.company_id)
                             st.rerun()
-                    
-                    st.markdown("<hr style='margin: 0.5rem 0; border-color: #f3f4f6;'>", unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
 # --- 5. AUTHENTICATION ---
 def login_page():
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
-        # Recreated "Friday" Card (CSS Only)
+        # Hero Section with clean headline
         st.markdown("""
-        <div class="login-container" style="background-color: #1a4d2e; padding: 3rem 2rem; border-radius: 16px; text-align: center; margin-bottom: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-            <div style="font-family: 'Inter', sans-serif; font-size: 1.1rem; color: #d1fae5; font-style: italic; margin-bottom: 2rem; font-weight: 300;">
-                Because let’s be honest, <span style="font-weight: 600; color: #ffffff;">nobody</span> remembers page 42.
-            </div>
-            <div style="font-family: 'Inter', sans-serif; font-size: 1.5rem; font-weight: 700; color: #34d399;">
-                We do.
-            </div>
-        </div>
-        <div style="text-align: center; margin-top: 0rem; margin-bottom: 2rem;">
-             <h1 style="font-family: 'Inter', sans-serif; font-size: 2.5rem; font-weight: 800; color: #059669; letter-spacing: -1px;">Friday</h1>
+        <div style="text-align: center; margin-bottom: 48px;">
+            <div class="logo-gradient" style="margin-bottom: 48px;">Friday</div>
+            <h1 class="hero-title">Your Intelligent<br>HR Companion</h1>
+            <p class="hero-subtitle">Streamline HR tasks with AI-powered assistance</p>
         </div>
         """, unsafe_allow_html=True)
         
+        # Login Form Container
+        st.markdown('<div class="login-container">', unsafe_allow_html=True)
+        
         with st.form("login_form"):
-            pw = st.text_input("Access Code", type="password")
-            if st.form_submit_button("Login", use_container_width=True):
+            pw = st.text_input("Access Code", type="password", placeholder="Enter your access code")
+            st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
+            if st.form_submit_button("Sign In", use_container_width=True, type="primary"):
                 try:
                     res = supabase.table('clients').select("*").eq('access_code', pw).execute()
                     if res.data:
@@ -708,6 +1073,8 @@ def login_page():
                         st.rerun()
                     else: st.error("Invalid Access Code")
                 except Exception as e: st.error(f"Login Error: {e}")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
 if not st.session_state.authenticated: login_page()
 else:
