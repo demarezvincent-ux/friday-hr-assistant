@@ -127,13 +127,18 @@ st.markdown("""
         border: 1px solid #E0E0E0 !important;
         border-radius: 12px;
         color: #2B2B2B !important; /* Force Graphite Text */
-        caret-color: #1A3C34; /* Deep Pine Cursor */
+        caret-color: #2B2B2B !important;
     }
     .stTextInput > div > div > input:focus, 
     .stChatInput > div > div > textarea:focus {
         border-color: #1A3C34 !important;
         box-shadow: 0 0 0 2px rgba(26, 60, 52, 0.1) !important;
         color: #2B2B2B !important;
+    }
+    .stTextInput > div > div > input::placeholder, 
+    .stChatInput > div > div > textarea::placeholder {
+        color: #666666 !important;
+        opacity: 1;
     }
     
     /* Remove default focus outline */
@@ -553,7 +558,7 @@ def handle_query(query):
     save_message(st.session_state.current_chat_id, "user", query, st.session_state.company_id)
 
     # Show loading animation while processing
-    with st.chat_message("user"):
+    with st.chat_message("user", avatar="👤"):
         st.write(query)
     
     with st.chat_message("assistant", avatar="⚡"):
@@ -595,7 +600,11 @@ def chat_page():
 
     # --- CHAT HISTORY RENDER ---
     for msg in history:
-        avatar = "⚡" if msg["role"] == "assistant" else None
+        if msg["role"] == "assistant":
+            avatar = "⚡"
+        else:
+            avatar = "👤" # Modern User Avatar
+            
         with st.chat_message(msg["role"], avatar=avatar):
             st.write(msg["content"])
             if msg["sources"]:
@@ -649,17 +658,18 @@ def login_page():
     st.markdown("<br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
-        try:
-            st.image("assets/logo.png", use_container_width=True)
-        except:
-            st.title("Friday")
-            
+        # Recreated "Friday" Card (CSS Only)
         st.markdown("""
-        <div style="text-align: center; margin-bottom: 2rem;">
-            <p style="font-family: 'Playfair Display', serif; font-size: 1.2rem; color: #1A3C34; font-style: italic;">
-                Because let’s be honest, nobody remembers page 42.<br>
-                <span style="font-weight: 600; font-family: 'Inter', sans-serif; font-style: normal; color: #D1F072; background: #1A3C34; padding: 0px 6px;">We do.</span>
-            </p>
+        <div style="background-color: #1A3C34; padding: 4rem 2rem; border-radius: 12px; text-align: center; margin-bottom: 2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+            <div style="font-family: 'Playfair Display', serif; font-size: 1.5rem; color: #FFFFFF; font-style: italic; margin-bottom: 2rem;">
+                Because let’s be honest, <span style="font-style: italic; font-family: 'Playfair Display', serif;">nobody</span> remembers page 42.
+            </div>
+            <div style="font-family: 'Playfair Display', serif; font-size: 1.8rem; font-weight: 700; color: #D1F072;">
+                We do.
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: -1rem; margin-bottom: 2rem;">
+             <h1 style="font-family: 'Playfair Display', serif; font-size: 3rem; color: #1A3C34;">Friday</h1>
         </div>
         """, unsafe_allow_html=True)
         
