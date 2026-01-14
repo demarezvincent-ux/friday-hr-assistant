@@ -130,12 +130,13 @@ st.markdown("""
 
     /* Active Navigation Button */
     div[data-testid="stSidebar"] button[kind="primary"] {
-        background: rgba(26, 60, 52, 0.08) !important;
-        color: var(--primary) !important;
+        background: var(--primary-gradient) !important;
+        color: white !important;
         border-radius: 8px;
-        border-left: 4px solid var(--primary) !important;
-        padding-left: 12px !important;
+        border-left: none !important;
+        padding-left: 16px !important;
         font-weight: 600 !important;
+        box-shadow: 0 2px 8px rgba(26, 60, 52, 0.25);
     }
 
     div[data-testid="stSidebar"] button[kind="secondary"] {
@@ -878,8 +879,8 @@ def get_dynamic_greeting():
 # --- UI PAGES ---
 def render_sidebar():
     with st.sidebar:
-        # Logo Section - Text only
-        st.markdown('<div style="font-family: \'Playfair Display\', serif; font-size: 32px; font-weight: 800; color: #1A3C34; margin-bottom: 24px; letter-spacing: -0.8px;">Friday</div>', unsafe_allow_html=True)
+        # Logo Section - Centered
+        st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 80px; margin-bottom: 24px;"><span style="font-family: \'Playfair Display\', serif; font-size: 32px; font-weight: 800; color: #1A3C34; letter-spacing: -0.8px;">Friday</span></div>', unsafe_allow_html=True)
 
         # Navigation Menu
         st.markdown("### Menu")
@@ -1074,8 +1075,8 @@ def login_page():
         # Hero Section with clean headline
         st.markdown("""
         <div style="text-align: center; margin-bottom: 48px;">
-            <div style="font-family: 'Playfair Display', serif; font-size: 42px; font-weight: 800; color: #1A3C34; margin-bottom: 48px; letter-spacing: -1.5px;">Friday</div>
-            <h1 class="hero-title">Your Intelligent<br>HR Companion</h1>
+            <div style="font-family: 'Playfair Display', serif; font-size: 72px; font-weight: 800; color: #1A3C34; margin-bottom: 24px; letter-spacing: -2px;">Friday</div>
+            <h1 class="hero-title" style="font-size: 42px;">Your Intelligent<br><em style="font-style: italic;">HR Companion</em></h1>
             <p class="hero-subtitle">Streamline HR tasks with AI-powered assistance</p>
         </div>
         """, unsafe_allow_html=True)
