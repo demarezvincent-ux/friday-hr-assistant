@@ -20,7 +20,7 @@ st.markdown("""
        ============================================ */
     
     /* 1. Typography - Playfair Display for headings, Inter for body */
-    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap');
 
     :root {
         /* Brand Colors - Deep Forest Green */
@@ -36,8 +36,12 @@ st.markdown("""
         
         /* Text Colors */
         --text-primary: #1D1D1F;
-        --text-secondary: #6E6E73;
+        --text-secondary: #5C5C61;
         --text-tertiary: #86868B;
+        
+        /* Primary Tints */
+        --primary-light: rgba(26, 60, 52, 0.08);
+        --primary-lighter: rgba(26, 60, 52, 0.04);
         --text-on-primary: #FFFFFF;
         
         /* Border & Divider */
@@ -79,7 +83,7 @@ st.markdown("""
     [data-testid="stSidebar"] {
         background-color: var(--sidebar-bg);
         border-right: 1px solid var(--divider);
-        width: 280px !important;
+        width: 300px !important;
     }
 
     [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
@@ -99,11 +103,11 @@ st.markdown("""
     /* Section Headers in Sidebar */
     [data-testid="stSidebar"] h3 {
         font-size: 11px !important;
-        font-weight: 600 !important;
+        font-weight: 700 !important;
         color: var(--text-tertiary) !important;
         text-transform: uppercase;
         letter-spacing: 0.6px;
-        margin: 24px 0 8px 0 !important;
+        margin: 28px 0 12px 0 !important;
     }
     
     /* Sidebar Navigation Buttons */
@@ -126,10 +130,11 @@ st.markdown("""
 
     /* Active Navigation Button */
     div[data-testid="stSidebar"] button[kind="primary"] {
-        background: rgba(0, 191, 165, 0.1) !important;
+        background: rgba(26, 60, 52, 0.08) !important;
         color: var(--primary) !important;
         border-radius: 8px;
-        border-left: 3px solid var(--primary) !important;
+        border-left: 4px solid var(--primary) !important;
+        padding-left: 12px !important;
         font-weight: 600 !important;
     }
 
@@ -155,7 +160,9 @@ st.markdown("""
     }
     
     .recent-chat-item:hover {
-        background-color: rgba(0, 0, 0, 0.04);
+        background-color: rgba(0, 0, 0, 0.06);
+        transform: translateX(2px);
+        transition: all 0.2s ease;
     }
     
     .recent-chat-item.active {
@@ -179,28 +186,30 @@ st.markdown("""
     
     /* Hero/Greeting Headers */
     .hero-title {
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
-        font-size: 48px;
-        font-weight: 600;
+        font-family: 'Playfair Display', serif !important;
+        font-size: 56px;
+        font-weight: 700;
         color: var(--text-primary);
         line-height: 1.1;
-        letter-spacing: -0.5px;
+        letter-spacing: -1.5px;
         margin-bottom: 16px;
     }
     
     .hero-subtitle {
-        font-size: 21px;
+        font-size: 19px;
         font-weight: 400;
-        color: var(--text-secondary);
+        color: #86868B;
         line-height: 1.4;
+        margin-top: 8px;
     }
 
     .greeting-title {
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
-        font-size: 40px;
-        font-weight: 700;
+        font-family: 'Playfair Display', serif !important;
+        font-size: 48px;
+        font-weight: 800;
         color: var(--text-primary);
         margin-bottom: 12px;
+        letter-spacing: -1px;
     }
     
     .greeting-subtitle {
@@ -229,8 +238,9 @@ st.markdown("""
 
     .stTextInput > div > div > input:focus {
         border-color: var(--primary) !important;
-        border-width: 2px !important;
-        box-shadow: 0 0 0 4px rgba(26, 60, 52, 0.1) !important;
+        border-width: 2.5px !important;
+        box-shadow: 0 0 0 6px rgba(26, 60, 52, 0.12) !important;
+        transform: translateY(-1px);
     }
     
     .stTextInput > div > div > input::placeholder {
@@ -247,10 +257,10 @@ st.markdown("""
     .stChatInput > div > div > textarea {
         background-color: var(--bg-primary);
         border: 1.5px solid transparent;
-        border-radius: 12px;
+        border-radius: 14px;
         color: var(--text-primary);
-        min-height: 56px;
-        padding: 16px 56px 16px 20px;
+        min-height: 60px;
+        padding: 18px 56px 18px 20px;
         font-size: 17px;
         transition: var(--transition-normal);
     }
@@ -258,7 +268,8 @@ st.markdown("""
     .stChatInput > div > div > textarea:focus {
         background-color: var(--bg-white);
         border-color: var(--primary) !important;
-        box-shadow: 0 0 0 4px rgba(26, 60, 52, 0.1) !important;
+        border-width: 2px !important;
+        box-shadow: 0 0 0 5px rgba(26, 60, 52, 0.12) !important;
     }
     
     .stChatInput > div > div > textarea::placeholder {
@@ -282,8 +293,9 @@ st.markdown("""
 
     .stButton > button[kind="primary"]:hover,
     button[kind="primary"]:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 16px rgba(26, 60, 52, 0.4) !important;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 24px rgba(26, 60, 52, 0.35) !important;
+        filter: brightness(1.05);
     }
 
     .stButton > button[kind="primary"]:active,
@@ -325,8 +337,8 @@ st.markdown("""
     [data-testid="stChatMessage"][data-testid*="user"] > div {
         background: var(--primary-gradient);
         color: white;
-        border-radius: 18px 18px 4px 18px;
-        padding: 12px 16px;
+        border-radius: 20px 20px 4px 20px;
+        padding: 14px 20px;
         max-width: 70%;
         margin-left: auto;
         box-shadow: 0 2px 8px rgba(0, 191, 165, 0.2);
@@ -337,8 +349,9 @@ st.markdown("""
         background-color: var(--bg-primary);
         color: var(--text-primary);
         border-radius: 18px 18px 18px 4px;
-        padding: 12px 16px;
+        padding: 16px 20px;
         max-width: 70%;
+        line-height: 1.6;
     }
 
     /* ============================================
@@ -353,63 +366,64 @@ st.markdown("""
     
     .source-tag {
         font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', sans-serif;
-        font-size: 12px;
-        font-weight: 500;
+        font-size: 13px;
+        font-weight: 600;
         background-color: var(--bg-white);
         border: 1px solid var(--border-color);
-        padding: 6px 12px;
+        padding: 8px 14px;
         border-radius: 99px;
         color: var(--text-secondary);
         display: inline-flex;
         align-items: center;
         transition: var(--transition-fast);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
     }
     
     .source-tag:hover { 
         border-color: var(--primary); 
         color: var(--primary); 
-        background-color: rgba(0, 191, 165, 0.04);
+        background-color: rgba(26, 60, 52, 0.04);
     }
 
     /* ============================================
        7. LOGIN PAGE SPECIFIC
        ============================================ */
     .login-container {
-        background: var(--bg-white);
-        border-radius: 16px;
-        padding: 48px 40px;
-        max-width: 440px;
+        background: linear-gradient(135deg, #FFFFFF 0%, #FAFAFA 100%);
+        border-radius: 20px;
+        padding: 56px 48px;
+        max-width: 480px;
         margin: 0 auto;
-        box-shadow: var(--shadow-lg);
+        box-shadow: 0 12px 48px rgba(0, 0, 0, 0.12);
         border: 1px solid var(--border-light);
     }
 
     .logo-gradient {
-        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
-        font-size: 36px;
-        font-weight: 700;
+        font-family: 'Playfair Display', serif !important;
+        font-size: 42px;
+        font-weight: 800;
         background: var(--primary-gradient);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
-        letter-spacing: -1px;
+        letter-spacing: -1.5px;
     }
 
     /* ============================================
        8. FILE UPLOADER - Documents Page
        ============================================ */
     [data-testid="stFileUploader"] {
-        border: 2px dashed var(--border-color);
+        border: 3px dashed var(--border-color);
         background-color: var(--bg-secondary);
         border-radius: 12px;
-        padding: 2rem;
-        transition: var(--transition-normal);
+        padding: 3rem;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     
     [data-testid="stFileUploader"]:hover {
         border-color: var(--primary);
-        background-color: rgba(0, 191, 165, 0.04);
-        transform: scale(1.01);
+        background-color: rgba(26, 60, 52, 0.06);
+        transform: scale(1.02);
     }
 
     /* File List Cards */
@@ -424,19 +438,23 @@ st.markdown("""
     .file-item {
         display: flex;
         align-items: center;
-        padding: 12px 16px;
+        padding: 14px 18px;
         border-radius: 8px;
-        transition: var(--transition-fast);
+        margin-bottom: 6px;
+        border: 1px solid transparent;
+        transition: all 0.2s ease;
     }
     
     .file-item:hover {
-        background-color: var(--bg-primary);
+        background-color: rgba(26, 60, 52, 0.04);
+        border-color: var(--border-color);
+        transform: translateX(4px);
     }
 
     /* File Type Icons */
-    .file-icon-pdf { color: #FF3B30; }
-    .file-icon-docx { color: #007AFF; }
-    .file-icon-default { color: var(--text-tertiary); }
+    .file-icon-pdf { color: #FF3B30; font-size: 18px; font-weight: 700; }
+    .file-icon-docx { color: #007AFF; font-size: 18px; font-weight: 700; }
+    .file-icon-default { color: var(--text-tertiary); font-size: 18px; }
 
     /* iOS-style Toggle */
     .ios-toggle input[type="checkbox"] {
@@ -516,6 +534,16 @@ st.markdown("""
     
     ::-webkit-scrollbar-thumb:hover {
         background-color: var(--text-tertiary);
+    }
+
+    /* ============================================
+       11. RESPONSIVE BREAKPOINTS
+       ============================================ */
+    @media (max-width: 768px) {
+        .hero-title { font-size: 36px; }
+        .greeting-title { font-size: 32px; }
+        .login-container { padding: 32px 24px; }
+        [data-testid="stSidebar"] { width: 100% !important; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -851,7 +879,7 @@ def get_dynamic_greeting():
 def render_sidebar():
     with st.sidebar:
         # Logo Section - Text only
-        st.markdown('<div style="font-family: Playfair Display, serif; font-size: 28px; font-weight: 700; color: #1A3C34; margin-bottom: 24px;">Friday</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-family: \'Playfair Display\', serif; font-size: 32px; font-weight: 800; color: #1A3C34; margin-bottom: 24px; letter-spacing: -0.8px;">Friday</div>', unsafe_allow_html=True)
 
         # Navigation Menu
         st.markdown("### Menu")
@@ -940,7 +968,7 @@ def chat_page():
     if not history:
         greeting = get_dynamic_greeting()
         st.markdown(f"""
-        <div style="text-align: center; margin-top: 80px; margin-bottom: 48px;">
+        <div style="text-align: center; margin-top: 80px; margin-bottom: 48px; max-width: 600px; margin-left: auto; margin-right: auto;">
             <h1 class="greeting-title">{greeting}</h1>
             <p class="greeting-subtitle">How can FRIDAY help you with HR tasks today?</p>
         </div>
@@ -967,7 +995,7 @@ def documents_page():
     # Page Header with subtitle
     st.markdown("""
     <div style="margin-bottom: 32px;">
-        <h1 style="font-size: 34px; font-weight: 700; color: #1D1D1F; margin-bottom: 8px;">Knowledge Base</h1>
+        <h1 style="font-family: 'Playfair Display', serif; font-size: 42px; font-weight: 800; color: #1D1D1F; margin-bottom: 12px;">Knowledge Base</h1>
         <p style="font-size: 17px; color: #6E6E73;">Upload documents to enhance FRIDAY's knowledge</p>
     </div>
     """, unsafe_allow_html=True)
@@ -1041,12 +1069,12 @@ def documents_page():
 # --- 5. AUTHENTICATION ---
 def login_page():
     st.markdown("<br>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1.5, 1])
+    col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         # Hero Section with clean headline
         st.markdown("""
         <div style="text-align: center; margin-bottom: 48px;">
-            <div style="font-family: 'Playfair Display', serif; font-size: 36px; font-weight: 700; color: #1A3C34; margin-bottom: 48px;">Friday</div>
+            <div style="font-family: 'Playfair Display', serif; font-size: 42px; font-weight: 800; color: #1A3C34; margin-bottom: 48px; letter-spacing: -1.5px;">Friday</div>
             <h1 class="hero-title">Your Intelligent<br>HR Companion</h1>
             <p class="hero-subtitle">Streamline HR tasks with AI-powered assistance</p>
         </div>
