@@ -15,56 +15,93 @@ st.set_page_config(page_title="FRIDAY", page_icon="⚡", layout="wide")
 
 st.markdown("""
 <style>
-    /* 1. Global Font & Background - Warm Paper Theme */
-    @import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@300;400;700&family=Inter:wght@300;400;500&display=swap');
+    /* 1. Global Font & Background - Paper Theme */
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500&display=swap');
 
     .stApp {
-        background-color: #FAF9F6; /* Warm Paper */
+        background-color: #F9F8F4; /* Paper */
         font-family: 'Inter', sans-serif;
     }
 
-    /* 2. Sidebar Refinement */
+    /* 2. Sidebar - Deep Pine Foundation */
     section[data-testid="stSidebar"] {
-        background-color: #F0EFEB;
-        border-right: 1px solid #DCDAD5;
+        background-color: #1A3C34; /* Deep Pine */
+        border-right: none;
+    }
+    section[data-testid="stSidebar"] h1, 
+    section[data-testid="stSidebar"] h2, 
+    section[data-testid="stSidebar"] h3, 
+    section[data-testid="stSidebar"] span, 
+    section[data-testid="stSidebar"] div,
+    section[data-testid="stSidebar"] label {
+        color: #F9F8F4 !important; /* Paper text on Deep Pine */
+    }
+    
+    /* Sidebar separator */
+    section[data-testid="stSidebar"] hr {
+        border-color: #F9F8F4;
+        opacity: 0.2;
     }
 
-    /* 3. Typography - Serif Headers */
+    /* 3. Typography - Playfair Display */
     h1, h2, h3 {
-        font-family: 'Merriweather', serif !important;
-        color: #2C2C2C;
+        font-family: 'Playfair Display', serif !important;
+        color: #1A3C34; /* Deep Pine for headers */
         letter-spacing: -0.5px;
     }
 
-    /* 4. Chat Message Bubbles - Distinct Cards */
+    /* 4. Chat Message Bubbles */
     div[data-testid="stChatMessage"] {
         background-color: #FFFFFF;
         border: 1px solid #E5E5E5;
         border-radius: 12px;
         padding: 1.5rem;
         margin-bottom: 1rem;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    div[data-testid="stChatMessage"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(0,0,0,0.06);
+    }
+    
+    /* User Message Bubble specific (optional contrast) */
+    div[data-testid="stChatMessage"][data-testid="user"] {
+        background-color: #F0F2F6;
     }
 
-    /* 5. Buttons - Soft & Elegant */
+    /* 5. Buttons - Electric Matcha Spark */
     .stButton > button {
         border-radius: 8px !important;
         font-family: 'Inter', sans-serif;
         font-weight: 500;
-        transition: all 0.2s ease;
-        border: 1px solid #E0E0E0;
+        transition: all 0.3s ease;
+        border: 1px solid transparent;
+        color: #2B2B2B !important; /* Graphite Text */
     }
 
-    /* Primary Button (Sage Green) */
+    /* Primary Button */
     div[data-testid="stButton"] > button[kind="primary"] {
-        background-color: #8FAE8B !important;
-        border: none;
-        color: white !important;
-        box-shadow: 0 4px 6px rgba(143, 174, 139, 0.25);
+        background-color: #D1F072 !important; /* Electric Matcha */
+        color: #2B2B2B !important; /* Graphite */
+        box-shadow: 0 4px 6px rgba(209, 240, 114, 0.3);
+        font-weight: 600;
     }
     div[data-testid="stButton"] > button[kind="primary"]:hover {
-        background-color: #7A9A76 !important;
-        transform: translateY(-1px);
+        background-color: #BFDC65 !important;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(209, 240, 114, 0.4);
+    }
+    
+    /* Secondary Button (Ghost/Outline style for consistency) */
+    div[data-testid="stButton"] > button[kind="secondary"] {
+        background-color: transparent !important;
+        border: 1px solid #1A3C34;
+        color: #1A3C34 !important;
+    }
+    div[data-testid="stButton"] > button[kind="secondary"]:hover {
+        background-color: #1A3C34 !important;
+        color: #D1F072 !important; /* Deep Pine bg with Matcha text on hover */
     }
 
     /* 6. Inputs & Text Areas */
@@ -72,7 +109,11 @@ st.markdown("""
         background-color: #FFFFFF;
         border: 1px solid #E0E0E0;
         border-radius: 8px;
-        color: #333;
+        color: #2B2B2B;
+    }
+    .stTextInput > div > div > input:focus, .stChatInput > div > div > textarea:focus {
+        border-color: #1A3C34;
+        box-shadow: 0 0 0 1px #1A3C34;
     }
 
     /* 7. Source Tags */
@@ -87,20 +128,22 @@ st.markdown("""
         color: #4B5563;
         display: inline-flex;
         align-items: center;
+        transition: all 0.2s;
     }
-    .source-tag:hover { border-color: #8FAE8B; color: #6B8E68; }
-
-    /* 8. Sidebar History Buttons */
-    .history-btn {
-        width: 100%;
-        text-align: left;
-        padding: 8px;
-        margin: 4px 0;
-        border-radius: 6px;
-        font-size: 0.85rem;
-        cursor: pointer;
+    .source-tag:hover { 
+        border-color: #D1F072; 
+        color: #1A3C34; 
+        background-color: #EDF7D5;
     }
 
+    /* 8. Animations */
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .stMarkdown, .stButton, .stChatMessage {
+        animation: fadeIn 0.4s ease-out forwards;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -434,7 +477,10 @@ def get_dynamic_greeting():
 # --- UI PAGES ---
 def render_sidebar():
     with st.sidebar:
-        st.title("⚡ FRIDAY")
+        try:
+            st.image("assets/logo.png", use_container_width=True)
+        except:
+            st.title("Friday")
         st.caption("v1.1 (Fallback System Active)")
         st.caption(f"ID: {st.session_state.company_id}")
         st.markdown("---")
@@ -514,10 +560,14 @@ def chat_page():
 
     # --- DYNAMIC GREETING (only when no history) ---
     if not history:
+        try:
+            st.image("assets/banner.png", use_container_width=True)
+        except: pass
+        
         greeting = get_dynamic_greeting()
         st.markdown(f"""
-        <div style="text-align: center; margin-top: 15vh; margin-bottom: 2rem;">
-            <h1 style="font-size: 3rem; margin-bottom: 0.5rem;">{greeting}</h1>
+        <div style="text-align: center; margin-top: 2rem; margin-bottom: 2rem;">
+            <h1 style="font-size: 3rem; margin-bottom: 0.5rem; font-family: 'Playfair Display', serif;">{greeting}</h1>
             <p style="color: #666; font-family: 'Inter', sans-serif;">How can FRIDAY help you with HR tasks today?</p>
         </div>
         """, unsafe_allow_html=True)

@@ -1,9 +1,9 @@
 [theme]
 base="light"
-primaryColor="#8FAE8B"      # Sage Green Pastel
-backgroundColor="#FAF9F6"   # Warm Paper
-secondaryBackgroundColor="#EBE9E4" # <--- CHANGED: Slightly darker/warmer for better contrast
-textColor="#2C2C2C"         # <--- CHANGED: Slightly darker for sharper text
+primaryColor="#D1F072"      # Electric Matcha
+backgroundColor="#F9F8F4"     # Paper
+secondaryBackgroundColor="#1A3C34" # Deep Pine
+textColor="#2B2B2B"           # Graphite
 font="serif"
 
 [server]
