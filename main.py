@@ -113,7 +113,7 @@ st.markdown("""
     /* Sidebar Navigation Buttons */
     [data-testid="stSidebar"] .stButton button {
         background-color: transparent;
-        color: var(--text-primary);
+        color: var(--text-primary) !important;
         border: none;
         text-align: left;
         padding: 12px 16px;
@@ -121,42 +121,57 @@ st.markdown("""
         border-radius: 8px;
         font-size: 15px;
         font-weight: 500;
-        transition: var(--transition-fast);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     [data-testid="stSidebar"] .stButton button:hover {
         background-color: rgba(0, 0, 0, 0.05);
+        transform: translateX(4px);
     }
 
-    /* Active Navigation Button */
-    div[data-testid="stSidebar"] button[kind="primary"] {
+    /* Active Navigation Button - Selected State */
+    div[data-testid="stSidebar"] button[kind="primary"],
+    div[data-testid="stSidebar"] button[kind="primary"]:hover,
+    div[data-testid="stSidebar"] button[kind="primary"]:focus,
+    div[data-testid="stSidebar"] button[kind="primary"]:active {
         background: var(--primary-gradient) !important;
-        color: white !important;
+        color: #FFFFFF !important;
         border-radius: 8px;
         border-left: none !important;
         padding-left: 16px !important;
         font-weight: 600 !important;
-        box-shadow: 0 2px 8px rgba(26, 60, 52, 0.25);
+        box-shadow: 0 4px 12px rgba(26, 60, 52, 0.35);
+        transform: scale(1.02);
     }
     
     /* Force white text on ALL elements inside active sidebar button */
-    div[data-testid="stSidebar"] button[kind="primary"] * {
-        color: white !important;
-    }
-    
+    div[data-testid="stSidebar"] button[kind="primary"] *,
     div[data-testid="stSidebar"] button[kind="primary"] p,
-    div[data-testid="stSidebar"] button[kind="primary"] span {
-        color: white !important;
+    div[data-testid="stSidebar"] button[kind="primary"] span,
+    div[data-testid="stSidebar"] button[kind="primary"] div {
+        color: #FFFFFF !important;
+        -webkit-text-fill-color: #FFFFFF !important;
     }
 
-    div[data-testid="stSidebar"] button[kind="secondary"] {
+    /* Inactive Navigation Button - Not Selected State */
+    div[data-testid="stSidebar"] button[kind="secondary"],
+    div[data-testid="stSidebar"] button[kind="secondary"]:hover,
+    div[data-testid="stSidebar"] button[kind="secondary"]:focus {
         background-color: transparent !important;
-        color: var(--text-secondary) !important;
+        color: #1D1D1F !important;
     }
     
+    div[data-testid="stSidebar"] button[kind="secondary"] *,
     div[data-testid="stSidebar"] button[kind="secondary"] p,
-    div[data-testid="stSidebar"] button[kind="secondary"] span {
-        color: var(--text-secondary) !important;
+    div[data-testid="stSidebar"] button[kind="secondary"] span,
+    div[data-testid="stSidebar"] button[kind="secondary"] div {
+        color: #1D1D1F !important;
+        -webkit-text-fill-color: #1D1D1F !important;
+    }
+    
+    div[data-testid="stSidebar"] button[kind="secondary"]:hover {
+        background-color: rgba(0, 0, 0, 0.06) !important;
+        transform: translateX(4px);
     }
 
     /* Sidebar Dividers */
@@ -506,10 +521,35 @@ st.markdown("""
     }
 
     /* ============================================
-       9. ANIMATIONS
+       9. ANIMATIONS - Enhanced with smooth transitions
        ============================================ */
     @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(8px); }
+        from { opacity: 0; transform: translateY(12px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    @keyframes fadeInLeft {
+        from { opacity: 0; transform: translateX(-20px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+    
+    @keyframes fadeInRight {
+        from { opacity: 0; transform: translateX(20px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+    
+    @keyframes scaleIn {
+        from { opacity: 0; transform: scale(0.95); }
+        to { opacity: 1; transform: scale(1); }
+    }
+    
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-10px); }
         to { opacity: 1; transform: translateY(0); }
     }
     
@@ -522,14 +562,108 @@ st.markdown("""
         0% { background-position: -200% 0; }
         100% { background-position: 200% 0; }
     }
+    
+    @keyframes float {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-5px); }
+    }
+    
+    @keyframes glow {
+        0%, 100% { box-shadow: 0 0 5px rgba(26, 60, 52, 0.2); }
+        50% { box-shadow: 0 0 20px rgba(26, 60, 52, 0.4); }
+    }
 
-    .stMarkdown, .stButton, .stChatMessage {
+    /* Apply animations to elements */
+    .stMarkdown {
+        animation: fadeIn 0.4s ease-out forwards;
+    }
+    
+    .stButton {
         animation: fadeIn 0.3s ease-out forwards;
+    }
+    
+    .stButton button {
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }
+    
+    .stButton button:hover {
+        transform: translateY(-2px);
+    }
+    
+    .stButton button:active {
+        transform: translateY(0) scale(0.98);
+    }
+    
+    .stChatMessage {
+        animation: fadeInUp 0.4s ease-out forwards;
+    }
+    
+    /* Sidebar animations */
+    [data-testid="stSidebar"] {
+        animation: fadeInLeft 0.5s ease-out forwards;
+    }
+    
+    /* Chat input animation */
+    .stChatInput {
+        animation: fadeInUp 0.5s ease-out forwards;
+    }
+    
+    /* File uploader animation */
+    [data-testid="stFileUploader"] {
+        animation: scaleIn 0.4s ease-out forwards;
+    }
+    
+    /* Hero/greeting animation */
+    .greeting-title, .hero-title {
+        animation: fadeInUp 0.6s ease-out forwards;
+    }
+    
+    .greeting-subtitle, .hero-subtitle {
+        animation: fadeInUp 0.6s ease-out 0.1s forwards;
+        opacity: 0;
+    }
+    
+    /* Source tags animation */
+    .source-tag {
+        animation: scaleIn 0.3s ease-out forwards;
+        transition: all 0.25s ease !important;
+    }
+    
+    .source-tag:hover {
+        transform: translateY(-2px) scale(1.02);
+    }
+    
+    /* Recent chat items animation */
+    .recent-chat-item {
+        animation: fadeInLeft 0.3s ease-out forwards;
+    }
+    
+    /* Login container animation */
+    .login-container {
+        animation: scaleIn 0.5s ease-out forwards;
+    }
+    
+    /* Input focus animation */
+    .stTextInput > div > div > input,
+    .stChatInput > div > div > textarea {
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }
+    
+    /* Logo float animation */
+    .logo-animated {
+        animation: float 3s ease-in-out infinite;
     }
     
     .thinking-dots {
         animation: pulse 1.5s ease-in-out infinite;
     }
+    
+    /* Staggered animation delays for list items */
+    .stButton:nth-child(1) { animation-delay: 0.05s; }
+    .stButton:nth-child(2) { animation-delay: 0.1s; }
+    .stButton:nth-child(3) { animation-delay: 0.15s; }
+    .stButton:nth-child(4) { animation-delay: 0.2s; }
+    .stButton:nth-child(5) { animation-delay: 0.25s; }
 
     /* ============================================
        10. SCROLLBAR - Minimal Style
@@ -895,7 +1029,7 @@ def get_dynamic_greeting():
 def render_sidebar():
     with st.sidebar:
         # Logo Section - Centered
-        st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 80px; margin-bottom: 24px;"><span style="font-family: \'Playfair Display\', serif; font-size: 32px; font-weight: 800; color: #1A3C34; letter-spacing: -0.8px;">Friday</span></div>', unsafe_allow_html=True)
+        st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100px; margin-bottom: 28px;"><span class="logo-animated" style="font-family: \'Playfair Display\', serif; font-size: 48px; font-weight: 800; color: #1A3C34; letter-spacing: -1.2px; text-shadow: 0 2px 8px rgba(26, 60, 52, 0.15);">Friday</span></div>', unsafe_allow_html=True)
 
         # Navigation Menu
         st.markdown("### Menu")
