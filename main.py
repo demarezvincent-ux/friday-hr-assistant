@@ -183,11 +183,33 @@ st.markdown("""
     .login-container {
         background: white; border-radius: 20px; padding: 56px 48px;
         max-width: 480px; margin: 0 auto; box-shadow: 0 12px 48px rgba(0,0,0,0.12);
+        animation: fadeIn 0.8s ease-out;
     }
     
     /* Animations */
-    @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-5px); } }
-    .logo-animated { animation: float 3s ease-in-out infinite; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes slideInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    
+    /* Apply animations */
+    .stApp { animation: fadeIn 0.6s ease-out; }
+    
+    [data-testid="stChatMessage"] {
+        animation: slideInUp 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    }
+    
+    /* Interactive Elements Hover Scale */
+    button:hover {
+        transform: scale(1.01);
+    }
+    
+    /* Logo - Static now */
+    .logo-animated { 
+        /* Animation removed as per request */
+        transition: transform 0.3s ease;
+    }
+    .logo-animated:hover {
+        transform: scale(1.05); /* Subtle scale on hover instead of bounce */
+    }
 </style>
 """, unsafe_allow_html=True)
 
