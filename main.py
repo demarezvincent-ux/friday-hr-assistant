@@ -50,29 +50,45 @@ st.markdown("""
         letter-spacing: -0.5px;
     }
 
-    /* 4. Chat Message Bubbles */
+    /* 4. Chat Interface - Apple/ChatGPT Minimalist */
     div[data-testid="stChatMessage"] {
-        background-color: #FFFFFF;
-        border: 1px solid #E5E5E5;
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin-bottom: 1rem;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    div[data-testid="stChatMessage"]:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 16px rgba(0,0,0,0.06);
+        background-color: transparent;
+        border: none;
+        padding: 0rem; 
+        margin-bottom: 1.5rem;
+        box-shadow: none;
     }
     
-    /* User Message Bubble specific (optional contrast) */
-    div[data-testid="stChatMessage"][data-testid="user"] {
-        background-color: #F0F2F6;
+    /* User Message Bubble */
+    div[data-testid="stChatMessage"][data-testid="user"] > div {
+        background-color: #F0F2F6; /* Light gray for user */
+        padding: 1rem 1.25rem;
+        border-radius: 18px 18px 4px 18px; /* Speech bubble shape */
+        color: #2B2B2B;
+        max-width: 80%;
+        margin-left: auto; /* Right align bubble */
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    
+    /* AI Message Bubble */
+    div[data-testid="stChatMessage"][data-testid="assistant"] > div {
+        background-color: #FFFFFF; /* White for AI */
+        padding: 1rem 1.25rem;
+        border-radius: 18px 18px 18px 4px; /* Speech bubble shape */
+        color: #2B2B2B;
+        max-width: 90%;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        border: 1px solid #E5E5E5;
     }
 
+    /* Avatars */
+    div[data-testid="stChatMessage"] .st-emotion-cache-1p1m4t5 {
+        background-color: transparent !important; /* Remove avatar background */
+    }
+    
     /* 5. Buttons - Electric Matcha Spark */
     .stButton > button {
-        border-radius: 8px !important;
+        border-radius: 99px !important; /* Pill shape */
         font-family: 'Inter', sans-serif;
         font-weight: 500;
         transition: all 0.3s ease;
@@ -84,36 +100,45 @@ st.markdown("""
     div[data-testid="stButton"] > button[kind="primary"] {
         background-color: #D1F072 !important; /* Electric Matcha */
         color: #2B2B2B !important; /* Graphite */
-        box-shadow: 0 4px 6px rgba(209, 240, 114, 0.3);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         font-weight: 600;
     }
     div[data-testid="stButton"] > button[kind="primary"]:hover {
         background-color: #BFDC65 !important;
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(209, 240, 114, 0.4);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }
     
-    /* Secondary Button (Ghost/Outline style for consistency) */
+    /* Secondary Button */
     div[data-testid="stButton"] > button[kind="secondary"] {
         background-color: transparent !important;
-        border: 1px solid #1A3C34;
+        border: 1px solid #E0E0E0;
         color: #1A3C34 !important;
     }
     div[data-testid="stButton"] > button[kind="secondary"]:hover {
-        background-color: #1A3C34 !important;
-        color: #D1F072 !important; /* Deep Pine bg with Matcha text on hover */
+        border-color: #1A3C34;
+        background-color: rgba(26, 60, 52, 0.05) !important;
     }
 
-    /* 6. Inputs & Text Areas */
-    .stTextInput > div > div > input, .stChatInput > div > div > textarea {
-        background-color: #FFFFFF;
-        border: 1px solid #E0E0E0;
-        border-radius: 8px;
-        color: #2B2B2B;
+    /* 6. Inputs & Text Areas - High Contrast Fix */
+    .stTextInput > div > div > input, 
+    .stChatInput > div > div > textarea {
+        background-color: #FFFFFF !important; /* Force White */
+        border: 1px solid #E0E0E0 !important;
+        border-radius: 12px;
+        color: #2B2B2B !important; /* Force Graphite Text */
+        caret-color: #1A3C34; /* Deep Pine Cursor */
     }
-    .stTextInput > div > div > input:focus, .stChatInput > div > div > textarea:focus {
-        border-color: #1A3C34;
-        box-shadow: 0 0 0 1px #1A3C34;
+    .stTextInput > div > div > input:focus, 
+    .stChatInput > div > div > textarea:focus {
+        border-color: #1A3C34 !important;
+        box-shadow: 0 0 0 2px rgba(26, 60, 52, 0.1) !important;
+        color: #2B2B2B !important;
+    }
+    
+    /* Remove default focus outline */
+    *:focus-visible {
+        outline: none !important;
     }
 
     /* 7. Source Tags */
@@ -138,11 +163,11 @@ st.markdown("""
 
     /* 8. Animations */
     @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(10px); }
+        from { opacity: 0; transform: translateY(5px); }
         to { opacity: 1; transform: translateY(0); }
     }
     .stMarkdown, .stButton, .stChatMessage {
-        animation: fadeIn 0.4s ease-out forwards;
+        animation: fadeIn 0.3s ease-out forwards;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -531,7 +556,7 @@ def handle_query(query):
     with st.chat_message("user"):
         st.write(query)
     
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar="⚡"):
         # Create a placeholder for the typing animation
         message_placeholder = st.empty()
         
@@ -560,13 +585,9 @@ def chat_page():
 
     # --- DYNAMIC GREETING (only when no history) ---
     if not history:
-        try:
-            st.image("assets/banner.png", use_container_width=True)
-        except: pass
-        
         greeting = get_dynamic_greeting()
         st.markdown(f"""
-        <div style="text-align: center; margin-top: 2rem; margin-bottom: 2rem;">
+        <div style="text-align: center; margin-top: 5rem; margin-bottom: 2rem;">
             <h1 style="font-size: 3rem; margin-bottom: 0.5rem; font-family: 'Playfair Display', serif;">{greeting}</h1>
             <p style="color: #666; font-family: 'Inter', sans-serif;">How can FRIDAY help you with HR tasks today?</p>
         </div>
@@ -574,7 +595,8 @@ def chat_page():
 
     # --- CHAT HISTORY RENDER ---
     for msg in history:
-        with st.chat_message(msg["role"]):
+        avatar = "⚡" if msg["role"] == "assistant" else None
+        with st.chat_message(msg["role"], avatar=avatar):
             st.write(msg["content"])
             if msg["sources"]:
                 tags = "".join([f"<div class='source-tag'>📄 {s}</div>" for s in msg["sources"]])
@@ -624,10 +646,23 @@ def documents_page():
 
 # --- 5. AUTHENTICATION ---
 def login_page():
-    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    st.markdown("<br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
-        st.title("⚡ FRIDAY Access")
+        try:
+            st.image("assets/logo.png", use_container_width=True)
+        except:
+            st.title("Friday")
+            
+        st.markdown("""
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <p style="font-family: 'Playfair Display', serif; font-size: 1.2rem; color: #1A3C34; font-style: italic;">
+                Because let’s be honest, nobody remembers page 42.<br>
+                <span style="font-weight: 600; font-family: 'Inter', sans-serif; font-style: normal; color: #D1F072; background: #1A3C34; padding: 0px 6px;">We do.</span>
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
         with st.form("login_form"):
             pw = st.text_input("Access Code", type="password")
             if st.form_submit_button("Login", use_container_width=True):
