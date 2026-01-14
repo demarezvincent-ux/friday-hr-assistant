@@ -138,9 +138,24 @@ st.markdown("""
         font-weight: 600 !important;
         box-shadow: 0 2px 8px rgba(26, 60, 52, 0.25);
     }
+    
+    /* Force white text on ALL elements inside active sidebar button */
+    div[data-testid="stSidebar"] button[kind="primary"] * {
+        color: white !important;
+    }
+    
+    div[data-testid="stSidebar"] button[kind="primary"] p,
+    div[data-testid="stSidebar"] button[kind="primary"] span {
+        color: white !important;
+    }
 
     div[data-testid="stSidebar"] button[kind="secondary"] {
         background-color: transparent !important;
+        color: var(--text-secondary) !important;
+    }
+    
+    div[data-testid="stSidebar"] button[kind="secondary"] p,
+    div[data-testid="stSidebar"] button[kind="secondary"] span {
         color: var(--text-secondary) !important;
     }
 
