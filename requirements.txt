@@ -6,3 +6,6 @@ python-docx
 huggingface_hub
 docx
 pdfplumber
+pydantic
+structlog
+# flashrank - optional, install manually if onnxruntime is available

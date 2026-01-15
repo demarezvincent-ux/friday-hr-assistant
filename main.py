@@ -9,6 +9,7 @@ import os
 import datetime
 import uuid
 from huggingface_hub import InferenceClient
+from services.rag_controller import get_context_with_strategy
 
 # --- 1. CONFIGURATION & PREMIUM STYLING ---
 st.set_page_config(page_title="FRIDAY", page_icon="⚡", layout="wide")
@@ -542,7 +543,16 @@ def handle_query(query):
             time.sleep(0.2)
         
         history = load_chat_history(st.session_state.current_chat_id)
-        context, sources = get_relevant_context(query, st.session_state.company_id)
+        # NEW: Elite RAG Pipeline with Intelligence Engine + Reranker
+        context, sources = get_context_with_strategy(
+            raw_query=query,
+            company_id=st.session_state.company_id,
+            supabase=supabase,
+            groq_api_key=FIXED_GROQ_KEY,
+            get_embeddings_fn=get_embeddings_batch,
+            match_count=40,
+            top_k=5
+        )
         response = ask_groq(context, history, query)
 
         save_message(st.session_state.current_chat_id, "assistant", response, st.session_state.company_id, sources)
