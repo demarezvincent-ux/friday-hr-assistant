@@ -157,3 +157,71 @@ class ResultReranker:
         """Check if FlashRank reranker is ready to use."""
         return self.ranker is not None and FLASHRANK_AVAILABLE
 
+
+def rerank_with_huggingface(
+    query: str, 
+    docs: List[dict], 
+    hf_api_key: str, 
+    top_k: int = 5
+) -> List[dict]:
+    """
+    Use HuggingFace Inference API for reranking.
+    Zero memory footprint - no local model required.
+    
+    Args:
+        query: The search query
+        docs: List of documents with 'content' field
+        hf_api_key: HuggingFace API token
+        top_k: Number of top results to return
+        
+    Returns:
+        List of top_k documents reordered by relevance
+    """
+    if not docs:
+        return []
+    
+    try:
+        from huggingface_hub import InferenceClient
+        
+        client = InferenceClient(token=hf_api_key)
+        model_id = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+        
+        # Score each document against the query
+        scores = []
+        for doc in docs[:20]:  # Limit to 20 for API efficiency
+            content = doc.get("content", "")[:500]  # Truncate long content
+            
+            try:
+                # Use text-classification for cross-encoder scoring
+                result = client.text_classification(
+                    f"{query} [SEP] {content}",
+                    model=model_id
+                )
+                # Extract score (format varies by model)
+                if isinstance(result, list) and len(result) > 0:
+                    score = result[0].get("score", 0.0)
+                else:
+                    score = 0.0
+            except:
+                score = doc.get("similarity", 0.0)  # Fallback to original
+            
+            scores.append((doc, score))
+        
+        # Sort by score descending
+        scores.sort(key=lambda x: x[1], reverse=True)
+        
+        # Return top_k with rerank_score added
+        reranked = []
+        for doc, score in scores[:top_k]:
+            doc_copy = doc.copy()
+            doc_copy["rerank_score"] = score
+            reranked.append(doc_copy)
+        
+        logger.info(f"HF Reranker: success - scored {len(scores)} docs, returning top {len(reranked)}")
+        return reranked
+        
+    except Exception as e:
+        logger.warning(f"HF Reranker failed: {e}, returning original order")
+        return docs[:top_k]
+
+

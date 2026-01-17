@@ -8,4 +8,8 @@ docx
 pdfplumber
 pydantic
 structlog
+pandas
+openpyxl
+python-pptx
+duckduckgo-search
 # flashrank - optional, install manually if onnxruntime is available
