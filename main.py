@@ -278,16 +278,25 @@ def extract_file_metadata(file) -> dict:
     meta = {"title": file.name, "created_date": None, "author": None}
     try:
         file.seek(0)
-        if file.name.endswith(".docx"):
+        fname_lower = file.name.lower()
+        if fname_lower.endswith(".docx"):
             doc = docx.Document(file)
             props = doc.core_properties
             meta["author"] = props.author if props.author else None
             meta["title"] = props.title if props.title else file.name
-        elif file.name.endswith(".pptx"):
+        elif fname_lower.endswith(".pptx"):
             prs = Presentation(file)
             props = prs.core_properties
             meta["author"] = props.author if props.author else None
+            meta["title"] = props.title if props.title else file.name
+        elif fname_lower.endswith(".pdf"):
+            with pdfplumber.open(file) as pdf:
+                md = pdf.metadata
+                if md:
+                    meta["author"] = md.get("Author")
+                    meta["title"] = md.get("Title") if md.get("Title") else file.name
     except: pass
+    file.seek(0)
     return meta
 
 def recursive_chunk_text(text: str, chunk_size: int = 800, overlap: int = 150) -> list:
@@ -381,10 +390,11 @@ def process_and_store_document(file, company_id, force_overwrite=False):
     try:
         ext = file.name.lower().split('.')[-1]
         logger.info(f"Processing file type: {ext}")
-        if ext == "pdf": text = extract_text_from_pdf(file)
+        if ext == "pdf":
+            file_metadata = extract_file_metadata(file)
+            text = extract_text_from_pdf(file)
         elif ext == "docx":
             file_metadata = extract_file_metadata(file)
-            file.seek(0)  # Reset file pointer after metadata extraction
             doc = docx.Document(file)
             text = "\n".join([p.text for p in doc.paragraphs])
         elif ext == "xlsx": text = extract_text_from_excel(file)
