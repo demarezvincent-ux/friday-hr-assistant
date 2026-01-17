@@ -5,7 +5,7 @@ Coordinates Intelligence Engine, Hybrid Search, and Reranker.
 
 import asyncio
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from supabase import Client
 

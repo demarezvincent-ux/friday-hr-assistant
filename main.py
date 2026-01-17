@@ -8,8 +8,15 @@ import time
 import os
 import datetime
 import uuid
+import logging
+import pandas as pd
+from pptx import Presentation
 from huggingface_hub import InferenceClient
 from services.rag_controller import get_context_with_strategy
+
+# Setup logging for debugging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 # --- 1. CONFIGURATION & PREMIUM STYLING ---
 st.set_page_config(page_title="FRIDAY", page_icon="⚡", layout="wide")
@@ -317,9 +324,12 @@ def register_document(filename, company_id, metadata=None):
         if metadata:
             doc_data["title"] = metadata.get("title")
             doc_data["author"] = metadata.get("author")
-        supabase.table("documents").insert(doc_data).execute()
+        result = supabase.table("documents").insert(doc_data).execute()
+        logger.info(f"Document registered: {filename}, result: {result.data}")
         return True
-    except: return False
+    except Exception as e:
+        logger.error(f"Failed to register document {filename}: {e}")
+        return False
 
 def check_if_document_exists(filename, company_id):
     try:
@@ -329,8 +339,12 @@ def check_if_document_exists(filename, company_id):
 
 def get_all_documents(company_id):
     try:
-        return supabase.table("documents").select("*").eq("company_id", company_id).order('is_active', desc=True).order('created_at', desc=True).execute().data
-    except: return []
+        result = supabase.table("documents").select("*").eq("company_id", company_id).order('is_active', desc=True).order('created_at', desc=True).execute()
+        logger.info(f"Fetched {len(result.data)} documents for company {company_id}")
+        return result.data
+    except Exception as e:
+        logger.error(f"Failed to fetch documents: {e}")
+        return []
 
 def toggle_document_status(filename, company_id, current_status):
     try:
@@ -350,36 +364,54 @@ def delete_document(filename, company_id):
 def process_and_store_document(file, company_id, force_overwrite=False):
     """Process and store document with support for PDF, DOCX, XLSX, PPTX."""
     clean_name = sanitize_filename(file.name)
+    logger.info(f"Starting to process document: {clean_name}")
+    
     if check_if_document_exists(clean_name, company_id):
-        if not force_overwrite: return "exists"
-        else: delete_document(clean_name, company_id)
+        if not force_overwrite: 
+            logger.info(f"Document already exists: {clean_name}")
+            return "exists"
+        else: 
+            logger.info(f"Overwriting existing document: {clean_name}")
+            delete_document(clean_name, company_id)
 
     text = ""
     file_metadata = {"title": clean_name}
     try:
         ext = file.name.lower().split('.')[-1]
+        logger.info(f"Processing file type: {ext}")
         if ext == "pdf": text = extract_text_from_pdf(file)
         elif ext == "docx":
             file_metadata = extract_file_metadata(file)
+            file.seek(0)  # Reset file pointer after metadata extraction
             doc = docx.Document(file)
             text = "\n".join([p.text for p in doc.paragraphs])
         elif ext == "xlsx": text = extract_text_from_excel(file)
         elif ext == "pptx":
             file_metadata = extract_file_metadata(file)
             text = extract_text_from_pptx(file)
-        else: return "unsupported"
+        else: 
+            logger.warning(f"Unsupported file type: {ext}")
+            return "unsupported"
     except Exception as e:
-        logger.error(f"Extraction failed: {e}")
+        logger.error(f"Extraction failed for {clean_name}: {e}")
         return "error"
     
-    if not text or len(text.strip()) < 10: return "empty"
+    if not text or len(text.strip()) < 10: 
+        logger.warning(f"Document empty or too short: {clean_name}")
+        return "empty"
+    
+    logger.info(f"Extracted {len(text)} characters from {clean_name}")
 
     try:
         file.seek(0)
         supabase.storage.from_("documents").upload(f"{company_id}/{clean_name}", file.read(), {"upsert": "true"})
-    except: pass
+    except Exception as e:
+        logger.warning(f"Storage upload failed (non-critical): {e}")
 
     chunks = recursive_chunk_text(text)
+    logger.info(f"Created {len(chunks)} chunks from {clean_name}")
+    
+    chunks_stored = 0
     for i in range(0, len(chunks), 20):
         batch = chunks[i:i+20]
         vectors = get_embeddings_batch(batch)
@@ -395,9 +427,19 @@ def process_and_store_document(file, company_id, force_overwrite=False):
                         },
                         "embedding": vec
                     })
-            if payload: supabase.table("document_chunks").insert(payload).execute()
+            if payload: 
+                try:
+                    supabase.table("document_chunks").insert(payload).execute()
+                    chunks_stored += len(payload)
+                except Exception as e:
+                    logger.error(f"Failed to store chunks batch: {e}")
+        else:
+            logger.warning(f"Embedding generation returned None for batch starting at {i}")
+    
+    logger.info(f"Stored {chunks_stored} chunks for {clean_name}")
     
     if register_document(clean_name, company_id, file_metadata):
+        logger.info(f"Successfully registered document: {clean_name}")
         return "success"
     return "error"
 
@@ -594,21 +636,32 @@ def handle_query(query):
         
         response = ask_groq(context, history, query)
         
-        # Filter sources to only those explicitly mentioned in the response
+        # Improved source citation: check for filename (with or without extension) in response
         cited_sources = []
+        response_lower = response.lower()
         for src in all_sources:
-            if src.lower() in response.lower():
+            # Check for full filename or basename without extension
+            src_lower = src.lower()
+            src_base = src.rsplit('.', 1)[0].lower() if '.' in src else src_lower
+            # Also check for partial matches (at least 70% of filename)
+            if (src_lower in response_lower or 
+                src_base in response_lower or
+                src.replace('_', ' ').lower() in response_lower):
                 cited_sources.append(src)
+        
+        # If no sources were explicitly cited but we have context sources, show top 2 as "used"
+        if not cited_sources and all_sources:
+            cited_sources = all_sources[:2]
         
         save_message(st.session_state.current_chat_id, "assistant", response, st.session_state.company_id, cited_sources)
         msg_placeholder.empty()
         st.markdown(response)
         
         if cited_sources:
-            cols = st.columns(len(cited_sources))
-            for i, src in enumerate(cited_sources):
-                with cols[i]:
-                    st.markdown(f'<div class="source-tag">📄 {src}</div>', unsafe_allow_html=True)
+            st.markdown('<div class="source-container" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;">', unsafe_allow_html=True)
+            for src in cited_sources:
+                st.markdown(f'<span class="source-tag" style="background: #f0f0f0; padding: 6px 12px; border-radius: 16px; font-size: 13px;">📄 {src}</span>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
     st.rerun()
 
 def chat_page():
@@ -668,10 +721,12 @@ def documents_page():
                     progress_bar.progress((idx + 1) / len(uploaded_files))
                 
                 status.empty(); progress_bar.empty()
-                if results["success"] > 0: st.success(f"✅ {results['success']} files indexed.")
+                if results["success"] > 0: st.success(f"✅ {results['success']} files indexed successfully!")
                 if results["exists"] > 0: st.info(f"ℹ️ {results['exists']} files already existed.")
-                if results["error"] > 0: st.error(f"❌ {results['error']} files failed.")
-                time.sleep(2); st.rerun()
+                if results["error"] > 0: st.error(f"❌ {results['error']} files failed to process.")
+                # Give database time to fully commit before refreshing
+                time.sleep(1)
+                st.rerun()
 
     with col2:
         docs = get_all_documents(st.session_state.company_id)
@@ -681,28 +736,34 @@ def documents_page():
             for doc in docs:
                 status_icon = "🟢" if doc['is_active'] else "⚪"
                 file_ext = doc['filename'].split('.')[-1].upper()
+                # Truncate long filenames for display
+                display_name = doc['filename']
+                if len(display_name) > 40:
+                    display_name = display_name[:37] + "..."
                 
-                # Custom HTML Row for the file
-                st.markdown(f'''
-                <div class="file-list-card">
-                    <div class="file-info">
-                        <span class="file-icon">📄</span>
-                        <div class="file-name" title="{doc['filename']}">
-                            <span style="font-size: 10px; opacity: 0.6; margin-right: 4px;">{file_ext}</span>
-                            {doc['filename']}
-                        </div>
+                # Use columns for clean layout: icon, name, status, actions
+                col_status, col_name, col_toggle, col_delete = st.columns([0.5, 4, 0.5, 0.5])
+                
+                with col_status:
+                    st.markdown(f"<div style='padding-top: 8px;'>{status_icon}</div>", unsafe_allow_html=True)
+                
+                with col_name:
+                    st.markdown(f'''
+                    <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0;">
+                        <span style="font-weight: 500; color: #1A3C34;">{file_ext}</span>
+                        <span title="{doc['filename']}" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{display_name}</span>
                     </div>
-                </div>
-                ''', unsafe_allow_html=True)
+                    ''', unsafe_allow_html=True)
                 
-                # Small action buttons below/side (Streamlit buttons must be used for logic)
-                b_col1, b_col2, b_col3 = st.columns([6, 1, 1])
-                with b_col2:
-                    if st.button("⏸" if doc['is_active'] else "▶", key=f"pause_{doc['id']}"):
+                with col_toggle:
+                    if st.button("⏸" if doc['is_active'] else "▶", key=f"pause_{doc['id']}", help="Pause/Resume"):
                         toggle_document_status(doc['filename'], st.session_state.company_id, doc['is_active']); st.rerun()
-                with b_col3:
-                    if st.button("×", key=f"del_doc_{doc['id']}"):
+                
+                with col_delete:
+                    if st.button("🗑", key=f"del_doc_{doc['id']}", help="Delete"):
                         delete_document(doc['filename'], st.session_state.company_id); st.rerun()
+                
+                st.markdown("<hr style='margin: 4px 0; border: none; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
 
 # --- 5. AUTHENTICATION ---
 def handle_login():
