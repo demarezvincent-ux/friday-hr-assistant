@@ -320,10 +320,8 @@ def smart_chunking(text, chunk_size=500, overlap=100):
 
 def register_document(filename, company_id, metadata=None):
     try:
+        # Only insert columns that exist in the documents table
         doc_data = {"company_id": company_id, "filename": filename, "is_active": True}
-        if metadata:
-            doc_data["title"] = metadata.get("title")
-            doc_data["author"] = metadata.get("author")
         result = supabase.table("documents").insert(doc_data).execute()
         logger.info(f"Document registered: {filename}, result: {result.data}")
         return True
