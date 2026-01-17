@@ -12,7 +12,7 @@ from .web_search import search_web, cached_web_search, format_web_results_as_con
 
 __all__ = [
     "SearchIntelligence",
-    "SearchParams", 
+    "SearchParams",
     "ResultReranker",
     "get_reranker",
     "get_context_with_strategy",
@@ -23,4 +23,3 @@ __all__ = [
     "cached_web_search",
     "format_web_results_as_context",
 ]
-

@@ -167,15 +167,6 @@ def rerank_with_huggingface(
     """
     Use HuggingFace Inference API for reranking.
     Zero memory footprint - no local model required.
-    
-    Args:
-        query: The search query
-        docs: List of documents with 'content' field
-        hf_api_key: HuggingFace API token
-        top_k: Number of top results to return
-        
-    Returns:
-        List of top_k documents reordered by relevance
     """
     if not docs:
         return []
@@ -197,31 +188,27 @@ def rerank_with_huggingface(
                     f"{query} [SEP] {content}",
                     model=model_id
                 )
-                # Extract score (format varies by model)
                 if isinstance(result, list) and len(result) > 0:
                     score = result[0].get("score", 0.0)
                 else:
                     score = 0.0
             except:
-                score = doc.get("similarity", 0.0)  # Fallback to original
+                score = doc.get("similarity", 0.0)
             
             scores.append((doc, score))
         
-        # Sort by score descending
         scores.sort(key=lambda x: x[1], reverse=True)
         
-        # Return top_k with rerank_score added
         reranked = []
         for doc, score in scores[:top_k]:
             doc_copy = doc.copy()
             doc_copy["rerank_score"] = score
             reranked.append(doc_copy)
         
-        logger.info(f"HF Reranker: success - scored {len(scores)} docs, returning top {len(reranked)}")
+        logger.info(f"HF Reranker: success - scored {len(scores)} docs")
         return reranked
         
     except Exception as e:
-        logger.warning(f"HF Reranker failed: {e}, returning original order")
+        logger.warning(f"HF Reranker failed: {e}")
         return docs[:top_k]
-
 

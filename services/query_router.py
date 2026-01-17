@@ -1,10 +1,3 @@
-"""
-Query Router - Classifies user intent.
-Intent A: DATABASE - Internal HR document search
-Intent B: WEB - External comparisons, news, trends
-Intent C: CHITCHAT - Greetings and casual conversation
-"""
-
 import re
 import logging
 from enum import Enum
@@ -12,88 +5,60 @@ from typing import Tuple
 
 logger = logging.getLogger(__name__)
 
-
 class QueryIntent(Enum):
+    CHITCHAT = "chitchat"
     DATABASE = "database"
     WEB = "web"
-    CHITCHAT = "chitchat"
-
 
 class QueryRouter:
     """
-    Lightweight query classifier using heuristics.
-    No LLM calls to save rate limits.
+    Heuristic-based router to classify user intent without LLM calls.
+    Optimized for speed and zero cost.
     """
     
-    CHITCHAT_PATTERNS = [
-        r"^(hi|hello|hey|bonjour|hallo|dag|salut)\b",
-        r"^how are you",
-        r"^thank(s| you)",
-        r"^(good morning|good afternoon|good evening|goedemorgen|bonsoir)",
-        r"^(bye|goodbye|au revoir|tot ziens)",
-        r"^what('s| is) your name",
-        r"^who are you",
-    ]
-    
-    WEB_INDICATORS = [
-        "compare", "versus", "vs", "vs.", 
-        "latest", "news", "trend", "trending",
-        "2024", "2025", "2026", "2027",
-        "market", "industry", "benchmark", "competitor",
-        "best practice", "external", "outside",
-        "salary survey", "industry standard"
-    ]
-    
-    # HR-specific terms that should always go to database
-    DATABASE_INDICATORS = [
-        "policy", "procedure", "our", "my", "employee", 
-        "vacation", "leave", "sick", "holiday", "benefits",
-        "contract", "handbook", "guide", "internal", "company"
-    ]
-    
     def __init__(self):
-        """Initialize the router."""
-        pass
-    
+        # Patterns for "small talk" and greetings
+        self.chitchat_patterns = [
+            r"^(hi|hello|hey|greetings|good morning|good afternoon|good evening|yo)\b",
+            r"^how are you\??$",
+            r"^who are you\??$",
+            r"^what can you do\??$",
+            r"^thanks?|thank you\b",
+            r"^bye|goodbye|see you\b"
+        ]
+        
+        # Patterns for web search intent (news, current events, etc.)
+        self.web_patterns = [
+            r"\b(news|latest|current|today|weather|stock|price|market|world|global)\b",
+            r"\b(who is the|what is the current|search the web for)\b",
+            r"\b(2024|2025|2026)\b"  # Future or current years often imply web search
+        ]
+
     def classify(self, query: str) -> Tuple[QueryIntent, float]:
         """
-        Classify query intent using heuristics.
-        
-        Args:
-            query: User's raw query
-            
-        Returns:
-            Tuple of (QueryIntent, confidence_score)
+        Classifies the query into an intent.
+        Returns (Intent, Confidence)
         """
-        lower_query = query.lower().strip()
+        clean_query = query.strip().lower()
         
-        # Rule 1: Chit chat patterns (high confidence)
-        for pattern in self.CHITCHAT_PATTERNS:
-            if re.search(pattern, lower_query):
-                logger.info(f"Router: CHITCHAT detected (pattern match)")
-                return QueryIntent.CHITCHAT, 0.95
+        # 1. Check Chitchat
+        for pattern in self.chitchat_patterns:
+            if re.search(pattern, clean_query):
+                return QueryIntent.CHITCHAT, 0.9
         
-        # Count web vs database indicators
-        web_score = sum(1 for ind in self.WEB_INDICATORS if ind in lower_query)
-        db_score = sum(1 for ind in self.DATABASE_INDICATORS if ind in lower_query)
+        # 2. Check Web
+        for pattern in self.web_patterns:
+            if re.search(pattern, clean_query):
+                return QueryIntent.WEB, 0.8
         
-        # Rule 2: Strong web indicators
-        if web_score >= 2 and web_score > db_score:
-            logger.info(f"Router: WEB detected (score: {web_score})")
-            return QueryIntent.WEB, min(0.7 + (web_score * 0.1), 0.95)
-        
-        # Rule 3: Any database indicators or default
-        if db_score > 0 or web_score == 0:
-            logger.info(f"Router: DATABASE detected (score: {db_score})")
-            return QueryIntent.DATABASE, min(0.6 + (db_score * 0.1), 0.95)
-        
-        # Rule 4: Weak web signal, still search DB first
-        logger.info(f"Router: DATABASE (default, weak web signal)")
+        # 3. Default to Database Search
+        # If the query is long or contains complex nouns, it's likely a DB search
+        if len(clean_query.split()) > 3:
+            return QueryIntent.DATABASE, 0.7
+            
         return QueryIntent.DATABASE, 0.5
 
-
-# Convenience function
-def route_query(query: str) -> Tuple[QueryIntent, float]:
-    """Route a query to the appropriate search strategy."""
+def route_query(query: str) -> QueryIntent:
     router = QueryRouter()
-    return router.classify(query)
+    intent, _ = router.classify(query)
+    return intent
