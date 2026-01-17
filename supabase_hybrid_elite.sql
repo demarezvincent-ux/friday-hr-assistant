@@ -1,23 +1,3 @@
-# FRIDAY RAG Pipeline - Supabase Hybrid Elite SQL Function
-
-Run this SQL in your **Supabase SQL Editor** to create the elite hybrid search function.
-
-## Prerequisites
-
-- Table: `document_chunks` with columns:
-  - `id` (bigint)
-  - `content` (text)
-  - `metadata` (jsonb) - contains `company_id` and `filename`
-  - `embedding` (vector(384)) - matches `paraphrase-multilingual-MiniLM-L12-v2`
-
-## SQL Function
-
-```sql
--- ============================================================
--- match_documents_hybrid_elite
--- Combines vector similarity + full-text search with deduplication
--- ============================================================
-
 create or replace function match_documents_hybrid_elite(
   query_embedding vector(384),
   text_search_query text,      -- Expects pipe-delimited: 'term1 | term2 | term3'
@@ -89,26 +69,3 @@ begin
 
 end;
 $$;
-```
-
-## Notes
-
-1. **`to_tsquery('simple', ...)`** - Uses 'simple' config to handle multilingual terms without stemming issues
-2. **Deduplication** - Uses `DISTINCT ON` to keep only the highest-scoring version of each document
-3. **Vector dimension** - Set to 384 to match the embedding model. Adjust if using a different model.
-4. **is_active filter** - Only returns active documents
-
-## Testing the Function
-
-After deployment, test with:
-
-```sql
--- Test with a sample query
-select * from match_documents_hybrid_elite(
-  '[0.1, 0.2, ...]'::vector(384),  -- Your embedding vector
-  'bike | bicycle | fiets',          -- FTS string
-  0.15,                               -- Threshold
-  10,                                 -- Match count
-  'your-company-uuid'::uuid           -- Company ID
-);
-```

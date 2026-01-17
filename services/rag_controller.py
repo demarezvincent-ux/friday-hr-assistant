@@ -95,8 +95,15 @@ async def get_context_with_strategy(
         try:
             result = supabase.rpc("match_documents_hybrid_elite", rpc_params).execute()
         except Exception:
-            # Fallback
-            result = supabase.rpc("match_documents_hybrid", rpc_params).execute()
+            # Fallback to legacy function with different parameter names
+            fallback_params = {
+                "query_embedding": query_embedding,
+                "query_text": fts_string,
+                "match_threshold": 0.15,
+                "match_count": match_count,
+                "filter_company_id": company_id
+            }
+            result = supabase.rpc("match_documents_hybrid", fallback_params).execute()
         
         candidates = result.data if result.data else []
         logger.info(f"Orchestrator: retrieved {len(candidates)} candidates")
