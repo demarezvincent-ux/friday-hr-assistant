@@ -24,143 +24,179 @@ st.set_page_config(page_title="FRIDAY", page_icon="⚡", layout="wide")
 st.markdown("""
 <style>
     /* ============================================
-       FRIDAY - Premium Design System v2.2
+       FRIDAY - Premium Design System v3.0
        ============================================ */
-    
-    /* 1. Typography & Global */
-    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=Inter:wght@400;500;600&family=Outfit:wght@400;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap');
 
     :root {
         --primary: #1A3C34;
-        --primary-light: #2A5C50;
-        --primary-gradient: linear-gradient(135deg, #1A3C34 0%, #2D5A4E 100%);
-        --bg-primary: #F5F5F7;
-        --bg-secondary: #FAFAFA;
-        --bg-white: #FFFFFF;
-        --sidebar-bg: rgba(245, 245, 247, 0.85);
-        --text-primary: #1D1D1F;
-        --text-secondary: #5C5C61;
-        --text-tertiary: #86868B;
-        --divider: rgba(0, 0, 0, 0.08);
-        --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
-        --transition-normal: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        --primary-light: #2A5248;
+        --background: #F9F9F7;
+        --sidebar-bg: #F0F0EE;
+        --text-primary: #1A3C34;
+        --text-secondary: #5C6F68;
+        --white: #FFFFFF;
+        --border: #E6E6E3;
     }
 
+    /* Global Reset & Typography */
     html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif !important;
+        font-family: 'Inter', sans-serif;
         color: var(--text-primary);
+        background-color: var(--background);
+    }
+    
+    h1, h2, h3, h4, h5, h6, .playfair {
+        font-family: 'Playfair Display', serif !important;
+        color: var(--text-primary) !important;
+    }
+
+    /* Streamlit App Container */
+    .stApp {
+        background-color: var(--background);
     }
 
     /* ============================================
-       2. GLASS-MORPHISM SIDEBAR
+       SIDEBAR
        ============================================ */
     [data-testid="stSidebar"] {
-        background: var(--sidebar-bg) !important;
-        backdrop-filter: blur(20px) !important;
-        -webkit-backdrop-filter: blur(20px) !important;
-        border-right: 1px solid var(--divider);
-        width: 300px !important;
+        background-color: var(--sidebar-bg);
+        border-right: 1px solid rgba(26, 60, 52, 0.06);
+    }
+    
+    [data-testid="stSidebar"] hr {
+        margin: 24px 0;
+        border-color: rgba(26, 60, 52, 0.1) !important;
     }
 
-    /* Sidebar buttons */
-    div[data-testid="stSidebar"] button {
+    /* Sidebar Buttons */
+    [data-testid="stSidebar"] .stButton > button {
+        background-color: transparent;
+        color: var(--text-secondary);
+        border: none;
         text-align: left;
-        padding: 12px 16px;
-        height: 44px;
-        border-radius: 12px;
-        font-size: 15px;
+        padding-left: 12px;
         font-weight: 500;
-        transition: var(--transition-smooth);
-        display: flex;
-        align-items: center;
-        width: 100%;
+        transition: all 0.2s ease;
+        justify-content: flex-start;
     }
-
-    div[data-testid="stSidebar"] button[kind="primary"] {
-        background: var(--primary-gradient) !important;
-        box-shadow: 0 4px 14px rgba(26, 60, 52, 0.25);
-        border: none !important;
-    }
-
-    div[data-testid="stSidebar"] button[kind="primary"] * {
-        color: white !important;
-        font-weight: 600 !important;
-    }
-
-    div[data-testid="stSidebar"] button[kind="secondary"] {
-        background-color: transparent !important;
-        color: var(--text-primary) !important;
-        border: none !important;
-    }
-
-    div[data-testid="stSidebar"] button[kind="secondary"]:hover {
-        background-color: rgba(0, 0, 0, 0.05) !important;
+    
+    [data-testid="stSidebar"] .stButton > button:hover {
+        color: var(--primary);
+        background-color: rgba(26, 60, 52, 0.04);
         transform: translateX(4px);
     }
 
+    /* Selected state for Sidebar Buttons handled by 'type="primary"' in Python 
+       but let's override the primary style to fit the theme */
+    [data-testid="stSidebar"] .stButton > button[kind="primary"] {
+        background-color: var(--primary) !important;
+        color: var(--white) !important;
+        box-shadow: 0 4px 12px rgba(26, 60, 52, 0.15);
+        border-radius: 8px;
+    }
+
     /* ============================================
-       3. PREMIUM FILE LIST
+       MAIN CONTENT & CHAT
+       ============================================ */
+    
+    /* Input Fields */
+    .stTextInput > div > div > input, 
+    .stChatInput > div > div > textarea {
+        background-color: var(--white);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        color: var(--text-primary);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+    }
+    
+    .stTextInput > div > div > input:focus,
+    .stChatInput > div > div > textarea:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 2px rgba(26, 60, 52, 0.1);
+    }
+
+    /* Chat Messages */
+    [data-testid="stChatMessage"] {
+        background-color: transparent;
+        gap: 1.5rem;
+    }
+
+    /* User Message */
+    [data-testid="stChatMessage"][data-testid="user"] {
+        background-color: transparent; 
+    }
+    
+    /* Assistant Message */
+    [data-testid="stChatMessage"][data-testid="assistant"] {
+        background-color: transparent;
+    }
+
+    /* Avatars */
+    [data-testid="chatAvatarIcon-user"], [data-testid="chatAvatarIcon-assistant"] {
+        border-radius: 50%;
+        background-color: var(--primary) !important;
+        color: white;
+        padding: 4px;
+    }
+
+    /* ============================================
+       FILE LIST & ICONS
        ============================================ */
     .file-list-card {
-        background: var(--bg-white);
-        border-radius: 14px;
-        padding: 14px 18px;
+        background: var(--white);
+        border-radius: 12px;
+        padding: 16px;
         margin-bottom: 12px;
-        border: 1px solid var(--divider);
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        transition: var(--transition-normal);
+        border: 1px solid var(--border);
+        box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+    }
+
+    /* Center align control buttons - targeting the Documents page columns */
+    /* This targets buttons inside the columns used for the file list */
+    [data-testid="stVerticalBlock"] [data-testid="column"] button {
+        margin: 0 auto;
+        display: block;
+    }
+
+    /* Status Dot */
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: var(--primary);
+    }
+
+    /* ============================================
+       ANIMATIONS
+       ============================================ */
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    
+    .element-container, .stChatMessage {
         animation: fadeIn 0.4s ease-out;
     }
 
-    .file-list-card:hover {
-        border-color: var(--primary-light);
-        box-shadow: var(--shadow-md);
-        transform: translateY(-1px);
+    .logo-animated {
+        animation: fadeIn 1s ease-out;
     }
 
-    .file-info {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        flex: 1;
-        overflow: hidden;
-    }
-
-    .file-icon { font-size: 20px; color: var(--primary); }
-    
-    .file-name {
-        font-weight: 500;
-        font-size: 15px;
-        color: var(--text-primary);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    /* ============================================
-       4. ANIMATIONS & SPINNER
-       ============================================ */
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-6px); } }
-
+    /* Thinking Spinner */
     .thinking-spinner { display: flex; gap: 6px; padding: 12px 0; align-items: center; }
     .thinking-spinner span {
-        width: 8px; height: 8px; background: var(--primary);
-        border-radius: 50%; opacity: 0.7;
-        animation: bounce 1.4s ease-in-out infinite;
+        width: 6px; height: 6px; background: var(--primary);
+        border-radius: 50%; opacity: 0.6;
+        animation: pulse 1.4s infinite ease-in-out;
     }
-    .thinking-spinner span:nth-child(2) { animation-delay: 0.16s; }
-    .thinking-spinner span:nth-child(3) { animation-delay: 0.32s; }
-    .thinking-text { font-size: 14px; color: var(--text-secondary); font-style: italic; margin-left: 8px; }
-
-    /* Custom scrollbar */
+    .thinking-spinner span:nth-child(1) { animation-delay: -0.32s; }
+    .thinking-spinner span:nth-child(2) { animation-delay: -0.16s; }
+    @keyframes pulse { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+    
+    /* Scrollbar */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #D2D2D7; border-radius: 10px; }
     ::-webkit-scrollbar-thumb:hover { background: #86868B; }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -572,7 +608,7 @@ def get_dynamic_greeting():
 def render_sidebar():
     with st.sidebar:
         # Logo
-        st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100px; margin-bottom: 28px;"><span class="logo-animated" style="font-family: \'Playfair Display\', serif; font-size: 48px; font-weight: 800; color: #1A3C34; letter-spacing: -1.2px;">Friday</span></div>', unsafe_allow_html=True)
+        st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100px; margin-bottom: 28px;"><span class="logo-animated" style="font-family: \'Playfair Display\', serif; font-size: 56px; font-weight: 800; color: #1A3C34; letter-spacing: -1.2px;">Friday</span></div>', unsafe_allow_html=True)
 
         # Navigation
         st.markdown("### Menu")
@@ -672,7 +708,7 @@ def handle_query(query):
         if cited_sources:
             st.markdown('<div class="source-container" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;">', unsafe_allow_html=True)
             for src in cited_sources:
-                st.markdown(f'<span class="source-tag" style="background: #f0f0f0; padding: 6px 12px; border-radius: 16px; font-size: 13px;">📄 {src}</span>', unsafe_allow_html=True)
+                st.markdown(f'<span class="source-tag" style="background: rgba(26, 60, 52, 0.06); color: #1A3C34; padding: 6px 12px; border-radius: 16px; font-size: 13px; font-weight: 500;">📄 {src}</span>', unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
     st.rerun()
 
@@ -702,7 +738,7 @@ def chat_page():
 def documents_page():
     st.markdown("""
     <div style="margin-bottom: 32px;">
-        <h1 style="font-family: 'Outfit', sans-serif; font-size: 42px; font-weight: 700;">Knowledge Base</h1>
+        <h1 style="font-family: 'Playfair Display', serif; font-size: 48px; font-weight: 700; color: #1A3C34;">Knowledge Base</h1>
     </div>
     """, unsafe_allow_html=True)
     
