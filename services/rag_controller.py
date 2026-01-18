@@ -133,8 +133,8 @@ async def get_context_with_strategy(
         rpc_params = {
             "query_embedding": query_embedding,
             "text_search_query": fts_string,
-            "match_threshold": 0.10,  # Lowered for better recall across all docs
-            "match_count": match_count,
+            "match_threshold": 0.05,  # Very low for maximum recall
+            "match_count": 300,  # Increased to catch more candidates
             "company_id_filter": company_id
         }
         
@@ -146,8 +146,8 @@ async def get_context_with_strategy(
             fallback_params = {
                 "query_embedding": query_embedding,
                 "query_text": fts_string,
-                "match_threshold": 0.10,  # Lowered for better recall
-                "match_count": match_count,
+                "match_threshold": 0.05,  # Very low for maximum recall
+                "match_count": 300,  # Increased to catch more candidates
                 "filter_company_id": company_id
             }
             result = supabase.rpc("match_documents_hybrid", fallback_params).execute()
