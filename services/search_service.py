@@ -38,8 +38,8 @@ Your task: Transform user queries into optimal search parameters.
 RULES:
 1. FIX typos and expand abbreviations
 2. Generate COMPREHENSIVE multilingual synonyms (EN, NL, FR)
-3. Include both COMPOUND and SPLIT versions of terms:
-   - "koffiemachine" AND "koffie machine" AND "coffee machine"
+3. Include COMPOUND words in ALL forms (with and without spaces):
+   - "coffeemachine" AND "coffee machine" AND "koffiemachine" AND "koffie machine"
    - "wachtwoord" AND "password" AND "mot de passe" AND "paswoord" AND "code"
 4. Include common HR synonyms and related terms
 5. Use pipe (|) separator for FTS terms
@@ -50,8 +50,9 @@ Input: "koffiemachine wachtwoord"
 Output JSON:
 {
   "corrected_natural_query": "What is the password for the coffee machine?",
-  "fts_search_string": "koffiemachine | koffie machine | coffee machine | machine café | wachtwoord | password | paswoord | code | mot de passe"
+  "fts_search_string": "coffeemachine | coffee machine | koffiemachine | koffie machine | machine café | wachtwoord | password | paswoord | code | mot de passe"
 }
+
 
 Input: "vakantiedagen"
 Output JSON:
