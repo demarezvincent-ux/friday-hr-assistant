@@ -188,19 +188,21 @@ async def get_context_with_strategy(
         reranked_docs = diversified_candidates[:top_k]  # Use diversified candidates
     
     # CRITICAL: Post-rerank diversification - ensure ALL sources are represented
+    # Keep up to 2 chunks per source to catch variations (like password in 2nd chunk)
     final_docs = []
-    sources_seen = set()
+    source_count = {}
+    MAX_PER_SOURCE = 2
     
-    # First pass: take top doc from each unique source
+    # First pass: take top 2 docs from each unique source
     for doc in reranked_docs:
         filename = doc.get("metadata", {}).get("filename", "Unknown")
-        if filename not in sources_seen:
+        if source_count.get(filename, 0) < MAX_PER_SOURCE:
             final_docs.append(doc)
-            sources_seen.add(filename)
+            source_count[filename] = source_count.get(filename, 0) + 1
             if len(final_docs) >= top_k:
                 break
     
-    # Second pass: fill remaining slots with highest-scored docs
+    # Second pass: fill remaining slots if we still have room
     for doc in reranked_docs:
         if len(final_docs) >= top_k:
             break
@@ -208,6 +210,7 @@ async def get_context_with_strategy(
             final_docs.append(doc)
     
     reranked_docs = final_docs
+
 
 
     # =========================================================================
