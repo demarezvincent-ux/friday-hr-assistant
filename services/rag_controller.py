@@ -174,18 +174,41 @@ async def get_context_with_strategy(
                 query=corrected_query,
                 docs=diversified_candidates,  # Use diversified candidates
                 hf_api_key=hf_api_key,
-                top_k=top_k
+                top_k=min(top_k * 2, len(diversified_candidates))  # Get more for diversity
             )
         else:
             reranker = ResultReranker()
             reranked_docs = reranker.rerank_docs(
                 query=corrected_query,
                 docs=diversified_candidates,  # Use diversified candidates
-                top_k=top_k
+                top_k=min(top_k * 2, len(diversified_candidates))  # Get more for diversity
             )
     except Exception as e:
         logger.warning(f"Orchestrator: reranking failed ({e}), using raw order")
         reranked_docs = diversified_candidates[:top_k]  # Use diversified candidates
+    
+    # CRITICAL: Post-rerank diversification - ensure ALL sources are represented
+    final_docs = []
+    sources_seen = set()
+    
+    # First pass: take top doc from each unique source
+    for doc in reranked_docs:
+        filename = doc.get("metadata", {}).get("filename", "Unknown")
+        if filename not in sources_seen:
+            final_docs.append(doc)
+            sources_seen.add(filename)
+            if len(final_docs) >= top_k:
+                break
+    
+    # Second pass: fill remaining slots with highest-scored docs
+    for doc in reranked_docs:
+        if len(final_docs) >= top_k:
+            break
+        if doc not in final_docs:
+            final_docs.append(doc)
+    
+    reranked_docs = final_docs
+
 
     # =========================================================================
     # STEP 5: Build Context String and Extract Sources
