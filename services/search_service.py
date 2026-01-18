@@ -144,8 +144,16 @@ IMPORTANT: Output ONLY valid JSON, no markdown or explanation."""
                 parsed = json.loads(content)
                 params = SearchParams(**parsed)
                 
+                # Automatically expand compound words (add no-space versions)
+                expanded_terms = self._expand_compound_words(params.fts_search_string)
+                params = SearchParams(
+                    corrected_natural_query=params.corrected_natural_query,
+                    fts_search_string=expanded_terms
+                )
+                
                 logger.info(f"Intelligence Engine: success - corrected='{params.corrected_natural_query[:50]}...'")
                 return params
+
 
             elif response.status_code == 429:
                 logger.warning("Intelligence Engine: rate limited")
@@ -163,6 +171,25 @@ IMPORTANT: Output ONLY valid JSON, no markdown or explanation."""
         except Exception as e:
             logger.warning(f"Intelligence Engine: unexpected error ({e})")
             return self._fallback_params(query)
+
+    def _expand_compound_words(self, fts_string: str) -> str:
+        """
+        Expand compound words to include both spaced and non-spaced versions.
+        e.g., 'coffee machine' -> 'coffee machine | coffeemachine'
+        """
+        terms = [t.strip() for t in fts_string.split('|')]
+        expanded = set(terms)
+        
+        for term in terms:
+            # If term has spaces, add version without spaces
+            if ' ' in term:
+                expanded.add(term.replace(' ', ''))
+            # If term is long enough and has no spaces, try to find natural splits
+            # (this is less reliable, so we just ensure we have both forms)
+        
+        return ' | '.join(sorted(expanded))
+
+
 
     def _fallback_params(self, raw_query: str) -> SearchParams:
         """
