@@ -400,25 +400,30 @@ def get_all_documents(company_id):
         return []
 
 def get_chunk_counts(company_id):
-    """Get the number of chunks stored for each document in a company."""
+    """Get the number of chunks stored for each document in a company.
+    
+    Strategy: Query chunks by filename (ASCII) to avoid emoji encoding issues.
+    We get the list of document filenames from the documents table and check each one.
+    """
     try:
-        # Use PostgREST filter syntax that avoids JSON serialization issues with emojis
-        # The 'like' operator with pattern matching works more reliably
-        result = supabase.table("document_chunks").select("metadata").like(
-            "metadata->>company_id", f"{company_id}"
-        ).execute()
+        # First get the list of filenames we need to check
+        docs = supabase.table("documents").select("filename").eq("company_id", company_id).execute()
+        filenames = [doc['filename'] for doc in docs.data]
         
-        # Count chunks per filename
         chunk_counts = {}
-        for chunk in result.data:
-            filename = chunk.get("metadata", {}).get("filename", "unknown")
-            chunk_counts[filename] = chunk_counts.get(filename, 0) + 1
+        for filename in filenames:
+            # Query chunks by filename (ASCII) - no emoji encoding issues
+            result = supabase.table("document_chunks").select("id", count="exact").like(
+                "metadata->>filename", filename
+            ).execute()
+            chunk_counts[filename] = result.count if result.count else 0
         
         logger.info(f"Chunk counts for {company_id}: {chunk_counts}")
         return chunk_counts
     except Exception as e:
         logger.error(f"Failed to get chunk counts: {e}")
         return {}
+
 
 
 
