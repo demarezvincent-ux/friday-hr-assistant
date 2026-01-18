@@ -182,7 +182,7 @@ st.markdown("""
 
     /* Thinking Spinner */
     .thinking-spinner { display: flex; gap: 6px; padding: 12px 0; align-items: center; }
-    .thinking-spinner span {
+    .thinking-spinner span:not(.thinking-text) {
         width: 6px; height: 6px; background: var(--primary);
         border-radius: 50%; opacity: 0.6;
         animation: pulse 1.4s infinite ease-in-out;
@@ -539,12 +539,24 @@ def get_relevant_context(query, company_id):
     except: return "", []
 
 def ask_groq(context, history, query):
-    """Ask Groq LLM with focus on real document name citations."""
-    system_prompt = """You are FRIDAY, an expert HR assistant.
-Answer questions based ONLY on the provided CONTEXT.
-IMPORTANT: Cite the source filename directly in your response (e.g., "according to internal_policy.pdf") 
-rather than using [Doc1]. Reference filenames exactly as they appear in context headers.
-If you don't know the answer, say so. Format tables in Markdown if present."""
+    """Ask Groq LLM with multilingual support and smart source citation."""
+    system_prompt = """You are FRIDAY, an expert multilingual HR assistant.
+
+CRITICAL RULES:
+1. LANGUAGE: Always respond in the SAME LANGUAGE as the user's query.
+   - Dutch query → Dutch response
+   - English query → English response
+   - French query → French response
+
+2. SOURCES: Answer based ONLY on the provided CONTEXT.
+   - If the answer requires info from multiple documents, combine them intelligently
+   - ONLY cite documents you actually used in your answer
+   - Cite using the exact filename (e.g., "according to onboarding_guide.pdf")
+   - Do NOT cite documents that don't contain relevant info
+
+3. HONESTY: If the CONTEXT doesn't contain the answer, say so clearly.
+
+4. FORMAT: Use Markdown for tables and structure when helpful."""
     
     messages = [{"role": "system", "content": system_prompt}]
     for msg in history[-4:]: messages.append({"role": msg["role"], "content": msg["content"]})
@@ -684,22 +696,22 @@ def handle_query(query):
         
         response = ask_groq(context, history, query)
         
-        # Improved source citation: check for filename (with or without extension) in response
+        # Smart source citation: only show sources the LLM actually cited in response
         cited_sources = []
         response_lower = response.lower()
         for src in all_sources:
-            # Check for full filename or basename without extension
+            # Normalize source name for matching
             src_lower = src.lower()
             src_base = src.rsplit('.', 1)[0].lower() if '.' in src else src_lower
-            # Also check for partial matches (at least 70% of filename)
-            if (src_lower in response_lower or 
-                src_base in response_lower or
-                src.replace('_', ' ').lower() in response_lower):
+            # Also create readable version (underscores to spaces)
+            src_readable = src_base.replace('_', ' ').replace('-', ' ')
+            
+            # Check if any variant of the filename appears in response
+            if any(variant in response_lower for variant in [src_lower, src_base, src_readable]):
                 cited_sources.append(src)
         
-        # If no sources were explicitly cited but we have context sources, show top 2 as "used"
-        if not cited_sources and all_sources:
-            cited_sources = all_sources[:2]
+        # NOTE: We only show sources that were actually cited by the LLM
+        # This ensures users don't see misleading source tags for unused documents
         
         save_message(st.session_state.current_chat_id, "assistant", response, st.session_state.company_id, cited_sources)
         msg_placeholder.empty()

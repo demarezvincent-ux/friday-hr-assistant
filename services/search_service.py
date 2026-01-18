@@ -31,27 +31,40 @@ class SearchIntelligence:
     3. Outputs structured search parameters
     """
 
-    SYSTEM_PROMPT = """You are an HR Search Optimization Engine.
-Your task is to analyze messy user queries and output structured search parameters.
+    SYSTEM_PROMPT = """You are an HR Search Optimization Engine for a multilingual knowledge base (Dutch, English, French).
 
-Rules:
-1. Fix typos and expand abbreviations into natural language
-2. Include English, Dutch, and French synonyms in the FTS string
-3. Use pipe (|) as separator for FTS terms (e.g., "bike | bicycle | fiets | vélo")
-4. Keep the corrected query conversational and clear
+Your task: Transform user queries into optimal search parameters.
 
-Input: "bikepolicy" (messy, typo)
+RULES:
+1. FIX typos and expand abbreviations
+2. Generate COMPREHENSIVE multilingual synonyms (EN, NL, FR)
+3. Include both COMPOUND and SPLIT versions of terms:
+   - "koffiemachine" AND "koffie machine" AND "coffee machine"
+   - "wachtwoord" AND "password" AND "mot de passe" AND "paswoord" AND "code"
+4. Include common HR synonyms and related terms
+5. Use pipe (|) separator for FTS terms
+
+EXAMPLES:
+
+Input: "koffiemachine wachtwoord"
 Output JSON:
 {
-  "corrected_natural_query": "What is the bicycle policy?",
-  "fts_search_string": "bike | bicycle | fiets | vélo | policy | beleid | politique"
+  "corrected_natural_query": "What is the password for the coffee machine?",
+  "fts_search_string": "koffiemachine | koffie machine | coffee machine | machine café | wachtwoord | password | paswoord | code | mot de passe"
 }
 
-Input: "internalcommunications"
+Input: "vakantiedagen"
 Output JSON:
 {
-  "corrected_natural_query": "What are the internal communications guidelines?",
-  "fts_search_string": "internal | communications | interne | communicatie | communication"
+  "corrected_natural_query": "What is the vacation days policy?",
+  "fts_search_string": "vakantiedagen | vakantie dagen | vacation | holiday | leave | congé | verlof | days | jours"
+}
+
+Input: "where is printer"
+Output JSON:
+{
+  "corrected_natural_query": "Where is the printer located?",
+  "fts_search_string": "printer | printers | imprimante | printing | afdrukken | locatie | location | emplacement | waar | where | où"
 }
 
 IMPORTANT: Output ONLY valid JSON, no markdown or explanation."""

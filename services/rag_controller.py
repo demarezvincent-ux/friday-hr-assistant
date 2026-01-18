@@ -17,6 +17,48 @@ from .web_search import cached_web_search, format_web_results_as_context
 logger = logging.getLogger(__name__)
 
 
+def diversify_by_source(candidates: List[dict], max_per_source: int = 5) -> List[dict]:
+    """
+    Limit the number of chunks per source document to ensure result diversity.
+    
+    This prevents a single document's chunks from dominating all results.
+    Keeps the top-scoring chunks from each source.
+    
+    Args:
+        candidates: List of document chunks with metadata containing 'filename'
+        max_per_source: Maximum chunks to keep per source file
+    
+    Returns:
+        Diversified list of candidates
+    """
+    if not candidates:
+        return []
+    
+    # Group candidates by source filename
+    source_groups = {}
+    for doc in candidates:
+        metadata = doc.get("metadata", {})
+        filename = metadata.get("filename", "unknown")
+        if filename not in source_groups:
+            source_groups[filename] = []
+        source_groups[filename].append(doc)
+    
+    # Sort each group by similarity score (keep best per source)
+    diversified = []
+    for filename, docs in source_groups.items():
+        # Sort by similarity descending
+        sorted_docs = sorted(docs, key=lambda x: x.get("similarity", 0), reverse=True)
+        # Keep only top N from this source
+        diversified.extend(sorted_docs[:max_per_source])
+    
+    # Re-sort the diversified list by similarity for fair reranking
+    diversified.sort(key=lambda x: x.get("similarity", 0), reverse=True)
+    
+    logger.info(f"Diversifier: {len(candidates)} candidates -> {len(diversified)} from {len(source_groups)} sources (max {max_per_source}/source)")
+    
+    return diversified
+
+
 async def get_context_with_strategy(
     raw_query: str,
     company_id: str,
@@ -86,7 +128,7 @@ async def get_context_with_strategy(
         rpc_params = {
             "query_embedding": query_embedding,
             "text_search_query": fts_string,
-            "match_threshold": 0.15,
+            "match_threshold": 0.10,  # Lowered for better recall across all docs
             "match_count": match_count,
             "company_id_filter": company_id
         }
@@ -99,7 +141,7 @@ async def get_context_with_strategy(
             fallback_params = {
                 "query_embedding": query_embedding,
                 "query_text": fts_string,
-                "match_threshold": 0.15,
+                "match_threshold": 0.10,  # Lowered for better recall
                 "match_count": match_count,
                 "filter_company_id": company_id
             }
@@ -116,13 +158,16 @@ async def get_context_with_strategy(
         return "", []
 
     # =========================================================================
-    # STEP 4: Rerank Candidates
+    # STEP 4: Diversify and Rerank Candidates
     # =========================================================================
+    # CRITICAL FIX: Diversify by source BEFORE reranking to prevent single-source dominance
+    diversified_candidates = diversify_by_source(candidates, max_per_source=5)
+    
     try:
         if hf_api_key:
             reranked_docs = rerank_with_huggingface(
                 query=corrected_query,
-                docs=candidates,
+                docs=diversified_candidates,  # Use diversified candidates
                 hf_api_key=hf_api_key,
                 top_k=top_k
             )
@@ -130,12 +175,12 @@ async def get_context_with_strategy(
             reranker = ResultReranker()
             reranked_docs = reranker.rerank_docs(
                 query=corrected_query,
-                docs=candidates,
+                docs=diversified_candidates,  # Use diversified candidates
                 top_k=top_k
             )
     except Exception as e:
         logger.warning(f"Orchestrator: reranking failed ({e}), using raw order")
-        reranked_docs = candidates[:top_k]
+        reranked_docs = diversified_candidates[:top_k]  # Use diversified candidates
 
     # =========================================================================
     # STEP 5: Build Context String and Extract Sources
