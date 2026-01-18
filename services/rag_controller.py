@@ -105,7 +105,7 @@ async def get_context_with_strategy(
         corrected_query = search_params.corrected_natural_query
         fts_string = search_params.fts_search_string
         
-        logger.info(f"Orchestrator: corrected='{corrected_query[:50]}...', fts='{fts_string[:50]}...'")
+        logger.info(f"Orchestrator: corrected='{corrected_query[:50]}...', fts='{fts_string}'")
         
     except Exception as e:
         logger.warning(f"Orchestrator: Intelligence Engine failed ({e}), using raw query")
