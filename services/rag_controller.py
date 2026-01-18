@@ -43,6 +43,10 @@ def diversify_by_source(candidates: List[dict], max_per_source: int = 5) -> List
             source_groups[filename] = []
         source_groups[filename].append(doc)
     
+    # DEBUG: Log all unique sources found
+    source_counts = {fn: len(docs) for fn, docs in source_groups.items()}
+    logger.info(f"Diversifier DEBUG: Found {len(source_groups)} unique sources in {len(candidates)} candidates: {source_counts}")
+    
     # Sort each group by similarity score (keep best per source)
     diversified = []
     for filename, docs in source_groups.items():
@@ -59,6 +63,7 @@ def diversify_by_source(candidates: List[dict], max_per_source: int = 5) -> List
     return diversified
 
 
+
 async def get_context_with_strategy(
     raw_query: str,
     company_id: str,
@@ -66,8 +71,8 @@ async def get_context_with_strategy(
     groq_api_key: str,
     get_embeddings_fn,
     hf_api_key: Optional[str] = None,
-    match_count: int = 40,
-    top_k: int = 5
+    match_count: int = 200,
+    top_k: int = 10
 ) -> Tuple[str, List[str]]:
     """
     Main RAG orchestrator with Layered Intelligence.

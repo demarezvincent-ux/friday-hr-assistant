@@ -133,11 +133,17 @@ st.markdown("""
     }
 
     /* Avatars */
-    [data-testid="chatAvatarIcon-user"], [data-testid="chatAvatarIcon-assistant"] {
-        border-radius: 50%;
+    div[data-testid="stChatMessage"] div[data-testid="stColorBlock"],
+    [data-testid="chatAvatarIcon-user"], 
+    [data-testid="chatAvatarIcon-assistant"] {
         background-color: var(--primary) !important;
-        color: white;
-        padding: 4px;
+        border-radius: 50%;
+        color: white !important;
+    }
+    
+    div[data-testid="stChatMessage"] img[data-testid="stChatAvatar"] {
+        border-radius: 50%;
+        border: 2px solid var(--primary);
     }
 
     /* ============================================
@@ -392,6 +398,26 @@ def get_all_documents(company_id):
     except Exception as e:
         logger.error(f"Failed to fetch documents: {e}")
         return []
+
+def get_chunk_counts(company_id):
+    """Get the number of chunks stored for each document in a company."""
+    try:
+        # Query to count chunks per filename
+        # Using raw SQL via RPC would be ideal, but we can do this with a simple query
+        result = supabase.table("document_chunks").select("metadata").eq("metadata->>company_id", company_id).execute()
+        
+        # Count chunks per filename
+        chunk_counts = {}
+        for chunk in result.data:
+            filename = chunk.get("metadata", {}).get("filename", "unknown")
+            chunk_counts[filename] = chunk_counts.get(filename, 0) + 1
+        
+        logger.info(f"Chunk counts for {company_id}: {chunk_counts}")
+        return chunk_counts
+    except Exception as e:
+        logger.error(f"Failed to get chunk counts: {e}")
+        return {}
+
 
 def toggle_document_status(filename, company_id, current_status):
     try:
@@ -691,7 +717,7 @@ def handle_query(query):
             groq_api_key=FIXED_GROQ_KEY,
             get_embeddings_fn=get_embeddings_batch,
             hf_api_key=HF_API_KEY,
-            top_k=5
+            top_k=10
         ))
         
         response = ask_groq(context, history, query)
@@ -738,7 +764,7 @@ def chat_page():
         """, unsafe_allow_html=True)
 
     for msg in history:
-        with st.chat_message(msg["role"], avatar="⚡" if msg["role"] == "assistant" else None):
+        with st.chat_message(msg["role"], avatar="⚡" if msg["role"] == "assistant" else "👤"):
             st.write(msg["content"])
             if msg["sources"]:
                 tags = "".join([f"<div class='source-tag'>📄 {s}</div>" for s in msg["sources"]])
@@ -790,19 +816,29 @@ def documents_page():
 
     with col2:
         docs = get_all_documents(st.session_state.company_id)
+        chunk_counts = get_chunk_counts(st.session_state.company_id)
+        
+        # Count documents with missing chunks
+        missing_chunks = sum(1 for doc in docs if chunk_counts.get(doc['filename'], 0) == 0)
+        
         st.markdown(f"### Indexed Files ({len(docs)})")
+        if missing_chunks > 0:
+            st.warning(f"⚠️ {missing_chunks} document(s) have no searchable chunks. Check 'Overwrite existing?' and re-upload them.")
+        
         if not docs: st.info("No documents indexed yet.")
         else:
             for doc in docs:
+                chunks = chunk_counts.get(doc['filename'], 0)
                 status_icon = "🟢" if doc['is_active'] else "⚪"
+                chunk_warning = " ⚠️" if chunks == 0 else ""
                 file_ext = doc['filename'].split('.')[-1].upper()
                 # Truncate long filenames for display
                 display_name = doc['filename']
                 if len(display_name) > 40:
                     display_name = display_name[:37] + "..."
                 
-                # Use columns for clean layout: icon, name, status, actions
-                col_status, col_name, col_toggle, col_delete = st.columns([0.5, 4, 0.5, 0.5])
+                # Use columns for clean layout: icon, name, chunks, actions
+                col_status, col_name, col_chunks, col_toggle, col_delete = st.columns([0.5, 3.5, 0.8, 0.5, 0.5])
                 
                 with col_status:
                     st.markdown(f"<div style='padding-top: 8px;'>{status_icon}</div>", unsafe_allow_html=True)
@@ -815,6 +851,14 @@ def documents_page():
                     </div>
                     ''', unsafe_allow_html=True)
                 
+                with col_chunks:
+                    chunk_color = "#e74c3c" if chunks == 0 else "#1A3C34"
+                    st.markdown(f'''
+                    <div style="padding: 8px 0; font-size: 12px; color: {chunk_color};" title="Number of searchable chunks">
+                        {chunks} chunks{chunk_warning}
+                    </div>
+                    ''', unsafe_allow_html=True)
+                
                 with col_toggle:
                     if st.button("⏸" if doc['is_active'] else "▶", key=f"pause_{doc['id']}", help="Pause/Resume"):
                         toggle_document_status(doc['filename'], st.session_state.company_id, doc['is_active']); st.rerun()
@@ -824,6 +868,7 @@ def documents_page():
                         delete_document(doc['filename'], st.session_state.company_id); st.rerun()
                 
                 st.markdown("<hr style='margin: 4px 0; border: none; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
+
 
 # --- 5. AUTHENTICATION ---
 def handle_login():
