@@ -402,9 +402,9 @@ def get_all_documents(company_id):
 def get_chunk_counts(company_id):
     """Get the number of chunks stored for each document in a company."""
     try:
-        # Query to count chunks per filename
-        # Using raw SQL via RPC would be ideal, but we can do this with a simple query
-        result = supabase.table("document_chunks").select("metadata").eq("metadata->>company_id", company_id).execute()
+        # Use .contains() for proper JSONB filtering - the ->> syntax doesn't work reliably
+        # with the Supabase Python client
+        result = supabase.table("document_chunks").select("metadata").contains("metadata", {"company_id": company_id}).execute()
         
         # Count chunks per filename
         chunk_counts = {}
@@ -417,6 +417,7 @@ def get_chunk_counts(company_id):
     except Exception as e:
         logger.error(f"Failed to get chunk counts: {e}")
         return {}
+
 
 
 def toggle_document_status(filename, company_id, current_status):
