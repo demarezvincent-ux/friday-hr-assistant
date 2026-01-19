@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS query_cache (
     query_embedding vector(384),  -- Matches paraphrase-multilingual-MiniLM-L12-v2
     response TEXT NOT NULL,
     sources JSONB,
-    company_id UUID NOT NULL,
+    company_id TEXT NOT NULL,  -- TEXT to match your existing schema
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -26,7 +26,7 @@ CREATE INDEX IF NOT EXISTS idx_query_cache_created ON query_cache(created_at);
 -- Function to find cached responses by similarity
 CREATE OR REPLACE FUNCTION match_cached_queries(
     p_query_embedding vector(384),
-    p_company_id UUID,
+    p_company_id TEXT,  -- TEXT to match your existing schema
     p_match_threshold FLOAT DEFAULT 0.95,
     p_match_count INT DEFAULT 1
 )
@@ -71,3 +71,4 @@ BEGIN
     RETURN deleted_count;
 END;
 $$;
+
