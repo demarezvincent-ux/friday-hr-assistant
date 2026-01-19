@@ -239,11 +239,17 @@ supabase = init_supabase()
 
 # --- 3. BACKEND LOGIC ---
 
+from services.agentic.rate_limiter import get_huggingface_limiter
+
 def get_embeddings_batch(texts):
     model_id = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     client = InferenceClient(token=HF_API_KEY)
     clean_texts = [t.replace("\n", " ").strip() for t in texts]
     backoff_times = [2, 4, 8, 16]
+    
+    # Rate limit to prevent 429 errors
+    hf_limiter = get_huggingface_limiter()
+    hf_limiter.wait_if_needed()
 
     for wait_time in backoff_times:
         try:
@@ -495,29 +501,48 @@ def process_and_store_document(file, company_id, force_overwrite=False):
     logger.info(f"Created {len(chunks)} chunks from {clean_name}")
     
     chunks_stored = 0
+    failed_batches = []
+    
     for i in range(0, len(chunks), 20):
         batch = chunks[i:i+20]
         vectors = get_embeddings_batch(batch)
-        if vectors:
-            payload = []
-            for j, vec in enumerate(vectors):
-                if isinstance(vec, list) and len(vec) > 300:
-                    payload.append({
-                        "content": batch[j],
-                        "metadata": {
-                            "company_id": company_id, "filename": clean_name, "is_active": True,
-                            "title": file_metadata.get("title"), "author": file_metadata.get("author")
-                        },
-                        "embedding": vec
-                    })
-            if payload: 
+        
+        if not vectors:
+            logger.warning(f"Embedding generation returned None for batch starting at {i}")
+            failed_batches.append({"start": i, "reason": "embedding_failed"})
+            continue
+            
+        payload = []
+        for j, vec in enumerate(vectors):
+            if isinstance(vec, list) and len(vec) > 300:
+                payload.append({
+                    "content": batch[j],
+                    "metadata": {
+                        "company_id": company_id, "filename": clean_name, "is_active": True,
+                        "title": file_metadata.get("title"), "author": file_metadata.get("author")
+                    },
+                    "embedding": vec
+                })
+        
+        if payload:
+            # Retry with exponential backoff
+            max_retries = 3
+            for attempt in range(max_retries):
                 try:
                     supabase.table("document_chunks").insert(payload).execute()
                     chunks_stored += len(payload)
+                    break  # Success!
                 except Exception as e:
-                    logger.error(f"Failed to store chunks batch: {e}")
-        else:
-            logger.warning(f"Embedding generation returned None for batch starting at {i}")
+                    if attempt == max_retries - 1:
+                        logger.error(f"FAILED after {max_retries} attempts for batch {i}: {e}")
+                        failed_batches.append({"start": i, "reason": str(e)})
+                    else:
+                        wait_time = 2 ** (attempt + 1)  # 2s, 4s, 8s
+                        logger.warning(f"Retry {attempt + 1}/{max_retries} for batch {i}, waiting {wait_time}s...")
+                        time.sleep(wait_time)
+    
+    if failed_batches:
+        logger.warning(f"Document {clean_name}: {len(failed_batches)} batch(es) failed: {failed_batches}")
     
     logger.info(f"Stored {chunks_stored} chunks for {clean_name}")
     
@@ -735,14 +760,23 @@ def handle_query(query):
         cited_sources = []
         response_lower = response.lower()
         for src in all_sources:
-            # Normalize source name for matching
+            # Create all possible mention formats
             src_lower = src.lower()
-            src_base = src.rsplit('.', 1)[0].lower() if '.' in src else src_lower
-            # Also create readable version (underscores to spaces)
-            src_readable = src_base.replace('_', ' ').replace('-', ' ')
+            basename = os.path.basename(src).lower()
+            basename_no_ext = basename.rsplit('.', 1)[0] if '.' in basename else basename
             
-            # Check if any variant of the filename appears in response
-            if any(variant in response_lower for variant in [src_lower, src_base, src_readable]):
+            # Build variant list
+            variants = [
+                src_lower,                                    # "path/onboarding_guide.pdf"
+                basename,                                     # "onboarding_guide.pdf"
+                basename_no_ext,                              # "onboarding_guide"
+                basename_no_ext.replace('_', ' '),            # "onboarding guide"
+                basename_no_ext.replace('-', ' '),            # "onboarding guide" (from dashes)
+                basename_no_ext.replace('_', '').replace('-', ''),  # "onboardingguide" (no separators)
+            ]
+            
+            # Check if ANY variant appears in response
+            if any(variant in response_lower for variant in variants if variant):
                 cited_sources.append(src)
         
         # NOTE: We only show sources that were actually cited by the LLM
@@ -757,6 +791,16 @@ def handle_query(query):
             for src in cited_sources:
                 st.markdown(f'<span class="source-tag" style="background: rgba(26, 60, 52, 0.06); color: #1A3C34; padding: 6px 12px; border-radius: 16px; font-size: 13px; font-weight: 500;">📄 {src}</span>', unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Confidence scoring (math-based, no extra API calls)
+        from services.agentic.confidence import calculate_confidence, format_confidence_html
+        confidence = calculate_confidence(
+            sources_count=len(cited_sources),
+            context_length=len(context) if context else 0,
+            response_length=len(response) if response else 0
+        )
+        st.markdown(format_confidence_html(confidence), unsafe_allow_html=True)
+        
     st.rerun()
 
 def chat_page():

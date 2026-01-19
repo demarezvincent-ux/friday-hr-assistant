@@ -1,6 +1,6 @@
 """
 RAG Controller / Main Orchestrator
-Coordinates Intelligence Engine, Hybrid Search, and Reranker.
+Coordinates Intelligence Engine, Hybrid Search, Reranker, and Semantic Cache.
 """
 
 import asyncio
@@ -13,6 +13,7 @@ from .search_service import SearchIntelligence, SearchParams
 from .ranker_service import ResultReranker, rerank_with_huggingface
 from .query_router import QueryRouter, QueryIntent
 from .web_search import cached_web_search, format_web_results_as_context
+from .agentic.cache import SemanticCache, is_cache_available
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,6 @@ def diversify_by_source(candidates: List[dict], max_per_source: int = 5) -> List
     return diversified
 
 
-
 async def get_context_with_strategy(
     raw_query: str,
     company_id: str,
@@ -72,11 +72,39 @@ async def get_context_with_strategy(
     get_embeddings_fn,
     hf_api_key: Optional[str] = None,
     match_count: int = 200,
-    top_k: int = 10
+    top_k: int = 10,
+    use_cache: bool = True
 ) -> Tuple[str, List[str]]:
     """
-    Main RAG orchestrator with Layered Intelligence.
+    Main RAG orchestrator with Layered Intelligence and Semantic Caching.
+    
+    If caching is enabled and available, checks for similar queries first.
+    This can reduce API calls by ~40% for repeated/similar questions.
     """
+    
+    # =========================================================================
+    # STEP 0a: Check Semantic Cache (if available)
+    # =========================================================================
+    cache = None
+    query_embedding = None
+    
+    if use_cache:
+        try:
+            if is_cache_available(supabase):
+                cache = SemanticCache(supabase)
+                
+                # Get embedding for cache lookup (reuse later)
+                vectors = get_embeddings_fn([raw_query])
+                if vectors and vectors[0]:
+                    query_embedding = vectors[0]
+                    
+                    # Check cache
+                    cached = cache.get_cached_response(query_embedding, company_id)
+                    if cached:
+                        logger.info("Orchestrator: CACHE HIT - returning cached response")
+                        return cached
+        except Exception as e:
+            logger.debug(f"Cache check failed (non-critical): {e}")
     # =========================================================================
     # STEP 0: Query Routing - Classify Intent
     # =========================================================================
