@@ -1,7 +1,13 @@
 """
 Vision Service for Visual RAG
-Provides image-to-text functionality using Groq's Llama 3.2 Vision model.
+Provides image-to-text functionality using Groq's Llama 4 Scout Vision model.
 Includes strict rate limiting to prevent lockouts.
+
+Rate Limits for meta-llama/llama-4-scout-17b-16e-instruct (Free Tier):
+- 30 RPM (requests per minute)
+- 1K RPD (requests per day)
+- 30K TPM (tokens per minute)
+- 500K TPD (tokens per day)
 """
 
 import time
@@ -15,7 +21,8 @@ logger = logging.getLogger(__name__)
 
 # Rate limiter state
 _last_vision_call = 0.0
-_VISION_COOLDOWN_SECONDS = 2.0  # Max 30 RPM = 1 every 2 seconds
+# Conservative rate limit: 20 RPM (3 seconds between calls) to stay well within 30 RPM
+_VISION_COOLDOWN_SECONDS = 3.0
 
 
 def _rate_limit_vision():
@@ -36,7 +43,7 @@ def describe_image(
     prompt: str = "Describe this image in detail for a search index. Mention colors, objects, text, and any important visual elements."
 ) -> str:
     """
-    Send an image to Groq's Vision model and get a text description.
+    Send an image to Groq's Llama 4 Scout Vision model and get a text description.
     
     Args:
         image_bytes: Raw image data (PNG, JPG, etc.)
@@ -80,7 +87,7 @@ def describe_image(
                 "Content-Type": "application/json"
             },
             json={
-                "model": "llama-3.2-90b-vision-preview",
+                "model": "meta-llama/llama-4-scout-17b-16e-instruct",
                 "messages": [
                     {
                         "role": "user",
@@ -240,7 +247,7 @@ def extract_images_from_pptx(file) -> List[Tuple[str, bytes]]:
     return images
 
 
-def get_visual_context(file, groq_api_key: str, max_images: int = 10) -> str:
+def get_visual_context(file, groq_api_key: str, max_images: int = 5) -> str:
     """
     Extract and describe all images from a document.
     

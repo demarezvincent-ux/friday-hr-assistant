@@ -572,7 +572,8 @@ def process_and_store_document(file, company_id, force_overwrite=False):
     try:
         from services.vision_service import get_visual_context
         file.seek(0)
-        visual_context = get_visual_context(file, FIXED_GROQ_KEY, max_images=10)
+        # Limit images per document to stay within 1K RPD vision limit
+        visual_context = get_visual_context(file, FIXED_GROQ_KEY, max_images=5)
         if visual_context:
             text = text + visual_context
             logger.info(f"Added visual context: {len(visual_context)} chars")
