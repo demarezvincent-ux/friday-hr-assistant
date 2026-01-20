@@ -203,6 +203,83 @@ st.markdown("""
     ::-webkit-scrollbar-thumb { background: #D2D2D7; border-radius: 10px; }
     ::-webkit-scrollbar-thumb:hover { background: #86868B; }
 
+    /* Source Citation Styles */
+    .sources-section {
+        margin-top: 16px;
+        padding: 12px 16px;
+        background: rgba(26, 60, 52, 0.03);
+        border-radius: 12px;
+        border: 1px solid rgba(26, 60, 52, 0.08);
+    }
+    
+    .sources-section details {
+        cursor: pointer;
+    }
+    
+    .sources-section summary {
+        font-size: 13px;
+        font-weight: 500;
+        color: #5C6F68;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .sources-section summary::-webkit-details-marker { display: none; }
+    
+    .sources-section summary::before {
+        content: '▶';
+        font-size: 10px;
+        transition: transform 0.2s ease;
+    }
+    
+    .sources-section details[open] summary::before {
+        transform: rotate(90deg);
+    }
+    
+    .sources-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+        padding-left: 18px;
+    }
+    
+    .source-pill {
+        background: rgba(26, 60, 52, 0.06);
+        color: #1A3C34;
+        padding: 6px 12px;
+        border-radius: 16px;
+        font-size: 12px;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+    
+    .no-sources {
+        font-size: 13px;
+        color: #86868B;
+        font-style: italic;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .single-source {
+        font-size: 13px;
+        color: #5C6F68;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .single-source .source-name {
+        font-weight: 500;
+        color: #1A3C34;
+    }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -676,6 +753,48 @@ def get_dynamic_greeting():
     elif 17 <= hour < 21: return "Good evening."
     else: return "Hello."
 
+# --- SOURCE DISPLAY HELPER ---
+def render_sources_html(sources: list) -> str:
+    """Render sources in a smart, elegant way.
+    
+    - No sources: Shows a subtle "No sources used" indicator
+    - Single source: Shows inline without collapse
+    - Multiple sources: Shows collapsible list
+    """
+    if not sources:
+        return '''
+        <div class="sources-section">
+            <div class="no-sources">
+                <span>💭</span>
+                <span>This response was generated without referencing any documents</span>
+            </div>
+        </div>
+        '''
+    
+    if len(sources) == 1:
+        return f'''
+        <div class="sources-section">
+            <div class="single-source">
+                <span>📄</span>
+                <span>Source: <span class="source-name">{sources[0]}</span></span>
+            </div>
+        </div>
+        '''
+    
+    # Multiple sources - collapsible
+    pills = ''.join([f'<span class="source-pill">📄 {src}</span>' for src in sources])
+    return f'''
+    <div class="sources-section">
+        <details>
+            <summary>{len(sources)} sources used</summary>
+            <div class="sources-list">
+                {pills}
+            </div>
+        </details>
+    </div>
+    '''
+
+
 # --- UI PAGES ---
 def render_sidebar():
     with st.sidebar:
@@ -756,46 +875,19 @@ def handle_query(query):
         
         response = ask_groq(context, history, query)
         
-        # Smart source citation: only show sources the LLM actually cited in response
-        cited_sources = []
-        response_lower = response.lower()
-        for src in all_sources:
-            # Create all possible mention formats
-            src_lower = src.lower()
-            basename = os.path.basename(src).lower()
-            basename_no_ext = basename.rsplit('.', 1)[0] if '.' in basename else basename
-            
-            # Build variant list
-            variants = [
-                src_lower,                                    # "path/onboarding_guide.pdf"
-                basename,                                     # "onboarding_guide.pdf"
-                basename_no_ext,                              # "onboarding_guide"
-                basename_no_ext.replace('_', ' '),            # "onboarding guide"
-                basename_no_ext.replace('-', ' '),            # "onboarding guide" (from dashes)
-                basename_no_ext.replace('_', '').replace('-', ''),  # "onboardingguide" (no separators)
-            ]
-            
-            # Check if ANY variant appears in response
-            if any(variant in response_lower for variant in variants if variant):
-                cited_sources.append(src)
-        
-        # NOTE: We only show sources that were actually cited by the LLM
-        # This ensures users don't see misleading source tags for unused documents
-        
-        save_message(st.session_state.current_chat_id, "assistant", response, st.session_state.company_id, cited_sources)
+        # Use ALL retrieved sources for display (user always sees what was used)
+        display_sources = all_sources if all_sources else []
+        save_message(st.session_state.current_chat_id, "assistant", response, st.session_state.company_id, display_sources)
         msg_placeholder.empty()
         st.markdown(response)
         
-        if cited_sources:
-            st.markdown('<div class="source-container" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px;">', unsafe_allow_html=True)
-            for src in cited_sources:
-                st.markdown(f'<span class="source-tag" style="background: rgba(26, 60, 52, 0.06); color: #1A3C34; padding: 6px 12px; border-radius: 16px; font-size: 13px; font-weight: 500;">📄 {src}</span>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+        # Smart source display - always show sources section
+        st.markdown(render_sources_html(display_sources), unsafe_allow_html=True)
         
         # Confidence scoring (math-based, no extra API calls)
         from services.agentic.confidence import calculate_confidence, format_confidence_html
         confidence = calculate_confidence(
-            sources_count=len(cited_sources),
+            sources_count=len(display_sources),
             context_length=len(context) if context else 0,
             response_length=len(response) if response else 0
         )
@@ -819,9 +911,9 @@ def chat_page():
     for msg in history:
         with st.chat_message(msg["role"], avatar="⚡" if msg["role"] == "assistant" else "👤"):
             st.write(msg["content"])
-            if msg["sources"]:
-                tags = "".join([f"<div class='source-tag'>📄 {s}</div>" for s in msg["sources"]])
-                st.markdown(f"<div class='source-container'>{tags}</div>", unsafe_allow_html=True)
+            if msg["role"] == "assistant":
+                sources = msg.get("sources", []) or []
+                st.markdown(render_sources_html(sources), unsafe_allow_html=True)
 
     if prompt := st.chat_input("Ask FRIDAY anything..."):
         handle_query(prompt)
