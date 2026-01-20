@@ -36,11 +36,23 @@ def _rate_limit_vision():
         time.sleep(sleep_time)
     _last_vision_call = time.time()
 
+# Default prompt optimized for HR document indexing
+VISION_PROMPT = """Analyze this image for a search index. Extract ALL of the following:
+
+1. **TEXT**: Transcribe ALL visible text exactly as written (in any language)
+2. **COLOR CODES**: If this shows color-coded items (like uniforms, badges, zones), list each color with its meaning
+3. **LABELS**: Extract all labels, titles, headings, and captions
+4. **NUMBERS**: Include any ID numbers, codes, or reference numbers
+5. **ASSOCIATIONS**: If colors/symbols are associated with roles/actions/meanings, explicitly state: "[Color/Symbol] = [Meaning]"
+
+Be specific and literal. Example: "Geel haarnetje = tester/nieuwe medewerker, Blauw = Productie-arbeider"
+"""
+
 
 def describe_image(
     image_bytes: bytes,
     groq_api_key: str,
-    prompt: str = "Describe this image in detail for a search index. Mention colors, objects, text, and any important visual elements."
+    prompt: str = VISION_PROMPT
 ) -> str:
     """
     Send an image to Groq's Llama 4 Scout Vision model and get a text description.
@@ -102,7 +114,7 @@ def describe_image(
                         ]
                     }
                 ],
-                "max_tokens": 300,
+                "max_tokens": 500,  # Increased to capture more text
                 "temperature": 0.1
             },
             timeout=30
