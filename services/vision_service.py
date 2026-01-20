@@ -247,11 +247,58 @@ def extract_images_from_pptx(file) -> List[Tuple[str, bytes]]:
     return images
 
 
-def get_visual_context(file, groq_api_key: str, max_images: int = 20) -> str:
+def _score_image(image_data: tuple) -> tuple:
     """
-    Extract and describe all images from a document.
+    Score an image for prioritization.
+    Higher score = more likely to be content-rich (charts, infographics).
     
-    This is the main entry point for Visual RAG.
+    Scoring strategy:
+    - Larger file size = higher score (more visual information)
+    - Filter out very small images (likely icons/logos)
+    
+    Returns: (score, image_data) for sorting
+    """
+    location, image_bytes = image_data
+    size = len(image_bytes)
+    
+    # Very small files are likely icons/decorative - give them low priority
+    if size < 5000:  # < 5KB
+        return (0, image_data)
+    
+    # Try to check dimensions (content-rich images tend to be larger)
+    try:
+        from PIL import Image
+        from io import BytesIO
+        img = Image.open(BytesIO(image_bytes))
+        width, height = img.size
+        
+        # Skip very small images (likely icons)
+        if width < 100 or height < 100:
+            logger.debug(f"Skipping small image {location}: {width}x{height}")
+            return (0, image_data)
+        
+        # Bonus for images with good aspect ratio (not too extreme)
+        aspect = max(width, height) / min(width, height)
+        aspect_bonus = 1.0 if aspect < 3 else 0.5  # Penalize very wide/tall banners
+        
+        # Score based on pixel area + file size
+        pixel_area = width * height
+        score = (pixel_area * aspect_bonus) + size
+        return (score, image_data)
+        
+    except Exception:
+        # If we can't analyze, just use file size
+        return (size, image_data)
+
+
+def get_visual_context(file, groq_api_key: str, max_images: int = 15) -> str:
+    """
+    Extract and describe images from a document using SMART SELECTION.
+    
+    Smart selection strategy:
+    1. Filter out tiny images (< 5KB or < 100x100px) - likely icons/logos
+    2. Score remaining images by size and dimensions
+    3. Process top-scoring images first (most likely to be charts/infographics)
     
     Args:
         file: Uploaded file object
@@ -279,10 +326,27 @@ def get_visual_context(file, groq_api_key: str, max_images: int = 20) -> str:
         logger.info("No images found in document")
         return ""
     
-    # Limit number of images to process
-    if len(images) > max_images:
-        logger.info(f"Limiting image processing from {len(images)} to {max_images}")
-        images = images[:max_images]
+    # === SMART IMAGE SELECTION ===
+    original_count = len(images)
+    
+    # Score all images
+    scored = [_score_image(img) for img in images]
+    
+    # Filter out low-scoring images (score = 0 means icon/small)
+    scored = [(score, img) for score, img in scored if score > 0]
+    
+    # Sort by score descending (best images first)
+    scored.sort(key=lambda x: x[0], reverse=True)
+    
+    # Take top N
+    images = [img for score, img in scored[:max_images]]
+    
+    filtered_count = original_count - len(scored)
+    logger.info(f"Smart selection: {original_count} images -> {len(scored)} valid -> processing top {len(images)} (filtered {filtered_count} icons/small images)")
+    
+    if not images:
+        logger.info("No content-rich images found after filtering")
+        return ""
     
     # Describe each image
     descriptions = []
@@ -302,3 +366,4 @@ def get_visual_context(file, groq_api_key: str, max_images: int = 20) -> str:
         return visual_context
     
     return ""
+
