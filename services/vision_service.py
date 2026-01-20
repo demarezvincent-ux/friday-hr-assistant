@@ -296,14 +296,15 @@ def _score_image(image_data: tuple) -> tuple:
         # Score based on pixel area + file size
         pixel_area = width * height
         score = (pixel_area * aspect_bonus) + size
+        logger.debug(f"Image {location} score={score:.0f} (size={size}, dim={width}x{height}, aspect={aspect:.1f})")
         return (score, image_data)
         
-    except Exception:
-        # If we can't analyze, just use file size
+    except Exception as e:
+        logger.warning(f"Could not analyze image {location}: {e}")
         return (size, image_data)
 
 
-def get_visual_context(file, groq_api_key: str, max_images: int = 15) -> str:
+def get_visual_context(file, groq_api_key: str, max_images: int = 25) -> str:
     """
     Extract and describe images from a document using SMART SELECTION.
     
@@ -340,21 +341,28 @@ def get_visual_context(file, groq_api_key: str, max_images: int = 15) -> str:
     
     # === SMART IMAGE SELECTION ===
     original_count = len(images)
+    logger.info(f"Starting smart selection on {original_count} images...")
     
     # Score all images
     scored = [_score_image(img) for img in images]
     
     # Filter out low-scoring images (score = 0 means icon/small)
-    scored = [(score, img) for score, img in scored if score > 0]
+    valid_scored = [(score, img) for score, img in scored if score > 0]
     
     # Sort by score descending (best images first)
-    scored.sort(key=lambda x: x[0], reverse=True)
+    valid_scored.sort(key=lambda x: x[0], reverse=True)
     
     # Take top N
-    images = [img for score, img in scored[:max_images]]
+    selected_scored = valid_scored[:max_images]
+    images = [img for score, img in selected_scored]
     
-    filtered_count = original_count - len(scored)
-    logger.info(f"Smart selection: {original_count} images -> {len(scored)} valid -> processing top {len(images)} (filtered {filtered_count} icons/small images)")
+    # Log what we kept
+    selected_names = [img[0] for img in images]
+    logger.info(f"Selected {len(images)}/{original_count} images for analysis: {selected_names}")
+    
+    filtered_count = original_count - len(valid_scored)
+    dropped_count = len(valid_scored) - len(selected_scored)
+    logger.info(f"Smart selection stats: {filtered_count} icons filtered, {dropped_count} images dropped due to limit")
     
     if not images:
         logger.info("No content-rich images found after filtering")

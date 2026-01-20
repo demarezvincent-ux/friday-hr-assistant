@@ -572,9 +572,9 @@ def process_and_store_document(file, company_id, force_overwrite=False):
     try:
         from services.vision_service import get_visual_context
         file.seek(0)
-        # Process ALL images (up to 50) to ensure we capture the hairnet chart
-        # Smart selection will still prioritize, but this ensures we don't cut off content
-        visual_context = get_visual_context(file, FIXED_GROQ_KEY, max_images=50)
+        # Process top 25 images (smart selection prioritizes charts)
+        # 25 images is a good balance between coverage and API limits
+        visual_context = get_visual_context(file, FIXED_GROQ_KEY, max_images=25)
         if visual_context:
             text = text + visual_context
             logger.info(f"Added visual context: {len(visual_context)} chars")
