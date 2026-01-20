@@ -309,7 +309,7 @@ def _score_image(image_data: tuple) -> tuple:
         return (size // 1000, image_data)  # Fallback: use size in KB
 
 
-def get_visual_context(file, groq_api_key: str, max_images: int = 25) -> str:
+def get_visual_context(file, groq_api_key: str, max_images: int = 35) -> str:
     """
     Extract and describe images from a document using SMART SELECTION.
     

@@ -572,9 +572,9 @@ def process_and_store_document(file, company_id, force_overwrite=False):
     try:
         from services.vision_service import get_visual_context
         file.seek(0)
-        # Process top 25 images (smart selection prioritizes charts)
-        # 25 images is a good balance between coverage and API limits
-        visual_context = get_visual_context(file, FIXED_GROQ_KEY, max_images=25)
+        # Process top 35 images to capture medium-sized infographics (hairnets, icons)
+        # 35 images handles documents with many small icons while respecting rate limits
+        visual_context = get_visual_context(file, FIXED_GROQ_KEY, max_images=35)
         if visual_context:
             text = text + visual_context
             logger.info(f"Added visual context: {len(visual_context)} chars")
