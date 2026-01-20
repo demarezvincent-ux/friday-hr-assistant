@@ -80,7 +80,7 @@ def describe_image(
                 "Content-Type": "application/json"
             },
             json={
-                "model": "llama-3.2-11b-vision-preview",
+                "model": "llama-3.2-90b-vision-preview",
                 "messages": [
                     {
                         "role": "user",
