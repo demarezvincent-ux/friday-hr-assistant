@@ -572,8 +572,9 @@ def process_and_store_document(file, company_id, force_overwrite=False):
     try:
         from services.vision_service import get_visual_context
         file.seek(0)
-        # Smart selection: prioritizes charts/infographics over icons
-        visual_context = get_visual_context(file, FIXED_GROQ_KEY, max_images=15)
+        # Process ALL images (up to 50) to ensure we capture the hairnet chart
+        # Smart selection will still prioritize, but this ensures we don't cut off content
+        visual_context = get_visual_context(file, FIXED_GROQ_KEY, max_images=50)
         if visual_context:
             text = text + visual_context
             logger.info(f"Added visual context: {len(visual_context)} chars")

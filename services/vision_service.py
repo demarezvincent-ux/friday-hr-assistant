@@ -367,6 +367,10 @@ def get_visual_context(file, groq_api_key: str, max_images: int = 15) -> str:
         logger.info(f"Describing image {i+1}/{len(images)} from {location}")
         description = describe_image(image_bytes, groq_api_key)
         
+        # Log the description content for debugging
+        preview = description[:200].replace('\n', ' ') + "..." if len(description) > 200 else description.replace('\n', ' ')
+        logger.info(f"Vision Content: {preview}")
+        
         if ext == 'pdf':
             descriptions.append(f"[Image on page {location}]: {description}")
         else:
