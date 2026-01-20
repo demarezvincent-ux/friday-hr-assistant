@@ -567,6 +567,18 @@ def process_and_store_document(file, company_id, force_overwrite=False):
         return "empty"
     
     logger.info(f"Extracted {len(text)} characters from {clean_name}")
+    
+    # === VISUAL RAG: Extract and describe images ===
+    try:
+        from services.vision_service import get_visual_context
+        file.seek(0)
+        visual_context = get_visual_context(file, FIXED_GROQ_KEY, max_images=10)
+        if visual_context:
+            text = text + visual_context
+            logger.info(f"Added visual context: {len(visual_context)} chars")
+    except Exception as e:
+        logger.warning(f"Visual context extraction failed (non-critical): {e}")
+    # === END VISUAL RAG ===
 
     try:
         file.seek(0)

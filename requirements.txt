@@ -12,4 +12,5 @@ pandas
 openpyxl
 python-pptx
 duckduckgo-search
+PyMuPDF
 # flashrank - optional, install manually if onnxruntime is available
