@@ -49,15 +49,29 @@ def describe_image(
     _rate_limit_vision()
     
     try:
-        # Convert image to base64
-        base64_image = base64.b64encode(image_bytes).decode('utf-8')
+        # Preprocess image: resize if too large, convert to JPEG for compatibility
+        from PIL import Image
+        from io import BytesIO
         
-        # Determine image type (default to jpeg)
-        image_type = "image/jpeg"
-        if image_bytes[:8] == b'\x89PNG\r\n\x1a\n':
-            image_type = "image/png"
-        elif image_bytes[:2] == b'\xff\xd8':
-            image_type = "image/jpeg"
+        img = Image.open(BytesIO(image_bytes))
+        
+        # Convert to RGB (removes alpha channel, handles palette images)
+        if img.mode in ('RGBA', 'LA', 'P'):
+            img = img.convert('RGB')
+        
+        # Resize if too large (Groq has limits around 20MB, but smaller is faster)
+        max_dimension = 1024
+        if max(img.size) > max_dimension:
+            img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+            logger.info(f"Vision: Resized image to {img.size}")
+        
+        # Convert to JPEG bytes
+        buffer = BytesIO()
+        img.save(buffer, format='JPEG', quality=85)
+        processed_bytes = buffer.getvalue()
+        
+        # Convert image to base64
+        base64_image = base64.b64encode(processed_bytes).decode('utf-8')
         
         response = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
@@ -75,7 +89,7 @@ def describe_image(
                             {
                                 "type": "image_url",
                                 "image_url": {
-                                    "url": f"data:{image_type};base64,{base64_image}"
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
                                 }
                             }
                         ]
@@ -95,7 +109,9 @@ def describe_image(
             logger.warning("Vision: Rate limited by Groq (429). Returning placeholder.")
             return "[Image description temporarily unavailable due to rate limits]"
         else:
-            logger.warning(f"Vision: Groq returned {response.status_code}")
+            # Log the full error response for debugging
+            error_detail = response.text[:500] if response.text else "No details"
+            logger.warning(f"Vision: Groq returned {response.status_code}: {error_detail}")
             return "[Image description unavailable]"
             
     except Exception as e:
