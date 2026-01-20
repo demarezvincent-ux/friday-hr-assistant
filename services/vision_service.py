@@ -247,7 +247,7 @@ def extract_images_from_pptx(file) -> List[Tuple[str, bytes]]:
     return images
 
 
-def get_visual_context(file, groq_api_key: str, max_images: int = 5) -> str:
+def get_visual_context(file, groq_api_key: str, max_images: int = 20) -> str:
     """
     Extract and describe all images from a document.
     
