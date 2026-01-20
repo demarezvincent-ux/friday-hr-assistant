@@ -166,12 +166,25 @@ def extract_images_from_docx(file) -> List[Tuple[str, bytes]]:
         docx_bytes = file.read()
         file.seek(0)
         
+        # Supported image extensions (including vector formats)
+        image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.emf', '.wmf']
+        
         with ZipFile(BytesIO(docx_bytes)) as zf:
+            # Debug: Log all files in word/media/
+            media_files = [n for n in zf.namelist() if 'media' in n.lower()]
+            logger.info(f"DOCX: Found {len(media_files)} files in media folders: {media_files[:10]}...")
+            
             for name in zf.namelist():
-                if name.startswith('word/media/') and any(name.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp']):
-                    image_bytes = zf.read(name)
-                    images.append((name, image_bytes))
-                    logger.info(f"DOCX: Extracted image {name}")
+                # Check both word/media/ and other media locations
+                if 'media/' in name.lower():
+                    ext = '.' + name.lower().split('.')[-1] if '.' in name else ''
+                    if ext in image_extensions:
+                        image_bytes = zf.read(name)
+                        images.append((name, image_bytes))
+                        logger.info(f"DOCX: Extracted image {name} ({len(image_bytes)} bytes)")
+        
+        if not images:
+            logger.warning("DOCX: No images found in word/media/ folder")
         
     except Exception as e:
         logger.error(f"DOCX image extraction failed: {e}")
