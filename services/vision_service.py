@@ -293,15 +293,20 @@ def _score_image(image_data: tuple) -> tuple:
         aspect = max(width, height) / min(width, height)
         aspect_bonus = 1.0 if aspect < 3 else 0.5  # Penalize very wide/tall banners
         
-        # Score based on pixel area + file size
-        pixel_area = width * height
-        score = (pixel_area * aspect_bonus) + size
-        logger.debug(f"Image {location} score={score:.0f} (size={size}, dim={width}x{height}, aspect={aspect:.1f})")
+        # REBALANCED SCORING: Cap contributions so medium images can compete with large photos
+        # - Cap file size at 100KB (larger files don't get extra points)
+        # - Normalize pixel area to prevent mega-photos from dominating
+        # - This gives medium-sized infographics (like charts) a fair chance
+        capped_size = min(size, 100000)  # Cap at 100KB
+        normalized_area = min((width * height) / 1000, 500)  # Normalize, cap at ~500
+        
+        score = (normalized_area * aspect_bonus) + (capped_size / 1000)
+        logger.info(f"Image {location}: score={score:.0f} (size={size//1000}KB, {width}x{height})")
         return (score, image_data)
         
     except Exception as e:
         logger.warning(f"Could not analyze image {location}: {e}")
-        return (size, image_data)
+        return (size // 1000, image_data)  # Fallback: use size in KB
 
 
 def get_visual_context(file, groq_api_key: str, max_images: int = 25) -> str:
