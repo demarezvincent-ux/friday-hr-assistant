@@ -9,11 +9,11 @@ from typing import List, Tuple, Optional
 
 from supabase import Client
 
-from .search_service import SearchIntelligence, SearchParams
-from .ranker_service import ResultReranker, rerank_with_huggingface
-from .query_router import QueryRouter, QueryIntent
-from .web_search import cached_web_search, format_web_results_as_context
-from .agentic.cache import SemanticCache, is_cache_available
+from services.search_service import SearchIntelligence, SearchParams
+from services.ranker_service import ResultReranker, rerank_with_huggingface
+from services.query_router import QueryRouter, QueryIntent
+from services.web_search import cached_web_search, format_web_results_as_context
+from services.agentic.cache import SemanticCache, is_cache_available
 
 logger = logging.getLogger(__name__)
 
