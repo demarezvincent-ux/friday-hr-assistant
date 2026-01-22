@@ -339,16 +339,18 @@ async def get_relevant_forms(query: str, context: str, company_id: str, supabase
                 import re
                 safe_company_id = re.sub(r'[^\w\-]', '_', company_id)
                 path = f"{safe_company_id}/{fname}"
-                url_res = supabase.storage.from_("documents").create_signed_url(path, 3600, options={'download': True})
+                url_res = supabase.storage.from_("documents").create_signed_url(path, 3600)
                 
                 # Check if response is a string (URL) or dict (depending on SDK version)
-                # supabase-py v2 usually returns dict with 'signedURL' or just str?
-                # Let's handle safe extraction
                 signed_url = url_res
                 if isinstance(url_res, dict):
                      signed_url = url_res.get("signedURL") or url_res.get("signed_url")
 
+                # Force download by appending download parameter to URL
+                # This ensures browser downloads the file instead of displaying raw content
                 if signed_url:
+                    separator = "&" if "?" in signed_url else "?"
+                    signed_url = f"{signed_url}{separator}download={fname}"
                     found_forms.append({"filename": fname, "url": signed_url})
             except Exception as e:
                 logger.warning(f"Failed to sign URL for {fname}: {e}")
