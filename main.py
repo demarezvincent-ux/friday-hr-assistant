@@ -640,7 +640,18 @@ def process_and_store_document(file, company_id, force_overwrite=False):
         file.seek(0)
         # Sanitize company_id for storage path (remove emoji and special chars)
         safe_company_id = re.sub(r'[^\w\-]', '_', company_id)
-        supabase.storage.from_("documents").upload(f"{safe_company_id}/{clean_name}", file.read(), {"upsert": "true"})
+        # Determine correct Content-Type to prevent browser rendering as text
+        mime_type = "application/octet-stream"
+        if ext == "pdf": mime_type = "application/pdf"
+        elif ext == "docx": mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        elif ext == "xlsx": mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        elif ext == "pptx": mime_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        
+        supabase.storage.from_("documents").upload(
+            f"{safe_company_id}/{clean_name}", 
+            file.read(), 
+            {"upsert": "true", "contentType": mime_type}
+        )
     except Exception as e:
         logger.warning(f"Storage upload failed (non-critical): {e}")
 

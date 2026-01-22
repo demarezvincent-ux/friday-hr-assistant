@@ -339,7 +339,7 @@ async def get_relevant_forms(query: str, context: str, company_id: str, supabase
                 import re
                 safe_company_id = re.sub(r'[^\w\-]', '_', company_id)
                 path = f"{safe_company_id}/{fname}"
-                url_res = supabase.storage.from_("documents").create_signed_url(path, 3600)
+                url_res = supabase.storage.from_("documents").create_signed_url(path, 3600, options={'download': True})
                 
                 # Check if response is a string (URL) or dict (depending on SDK version)
                 # supabase-py v2 usually returns dict with 'signedURL' or just str?
