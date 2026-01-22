@@ -65,6 +65,21 @@ def describe_image(
     Returns:
         A text description of the image, or a placeholder if it fails.
     """
+    # Validate inputs
+    if not image_bytes or not isinstance(image_bytes, bytes):
+        logger.warning("Vision: Invalid image bytes provided")
+        return "[Image description unavailable - invalid data]"
+    
+    if not groq_api_key or not isinstance(groq_api_key, str):
+        logger.warning("Vision: Invalid API key provided")
+        return "[Image description unavailable - API key error]"
+    
+    # Check image size (10MB limit)
+    MAX_IMAGE_SIZE = 10 * 1024 * 1024
+    if len(image_bytes) > MAX_IMAGE_SIZE:
+        logger.warning(f"Vision: Image too large ({len(image_bytes)} bytes)")
+        return "[Image description unavailable - file too large]"
+    
     _rate_limit_vision()
     
     try:

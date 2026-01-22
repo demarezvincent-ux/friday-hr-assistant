@@ -94,6 +94,15 @@ IMPORTANT: Output ONLY valid JSON, no markdown or explanation."""
             SearchParams with corrected query and FTS string.
             Falls back to raw query on any failure.
         """
+        # Validate input
+        if not raw_query or not isinstance(raw_query, str):
+            return self._fallback_params(str(raw_query) if raw_query else "")
+        
+        # Limit query length to prevent abuse
+        if len(raw_query) > 1000:
+            logger.warning(f"Query too long: {len(raw_query)} chars, truncating")
+            raw_query = raw_query[:1000]
+        
         # Normalize input
         normalized = raw_query.strip()
         if not normalized:

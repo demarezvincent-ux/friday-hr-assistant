@@ -10,6 +10,17 @@ def search_web(query: str, max_results: int = 5) -> List[Dict]:
     Perform a live web search using DuckDuckGo.
     Zero cost and no API key required.
     """
+    # Validate inputs
+    if not query or not isinstance(query, str):
+        logger.warning("Web Search: Invalid query provided")
+        return []
+    
+    # Limit query length and max results
+    if len(query) > 500:
+        query = query[:500]
+    
+    max_results = min(max(max_results, 1), 10)  # Ensure 1-10 results
+    
     results = []
     try:
         with DDGS() as ddgs:

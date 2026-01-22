@@ -260,6 +260,100 @@ async def get_context_with_strategy(
 
     context_str = "\n\n".join(context_parts)
     
+    # =========================================================================
+    # STEP 6: Form Discovery & Proactive Linking (Option B)
+    # =========================================================================
+    try:
+        forms = await get_relevant_forms(corrected_query, context_str, company_id, supabase)
+        if forms:
+            form_section = "\n\n=== RECOMMENDED FORMS (Secure Downloads) ===\n"
+            for f in forms:
+                form_section += f"- [{f['filename']}]({f['url']}) (Expires in 1h)\n"
+            context_str += form_section
+            logger.info(f"Orchestrator: Added {len(forms)} form links to context")
+    except Exception as e:
+        logger.warning(f"Form discovery failed (non-critical): {e}")
+    
     logger.info(f"Orchestrator: returning {len(reranked_docs)} docs from {len(sources)} sources")
     
     return context_str, sources
+
+
+async def get_relevant_forms(query: str, context: str, company_id: str, supabase: Client) -> List[dict]:
+    """
+    Discovery logic for Option B:
+    1. Check if 'form', 'template', 'application' keywords exist in Context or Query.
+    2. If yes, search DB for files matching query keywords AND 'form'/'template' etc.
+    3. Generate 1-hour signed URLs.
+    """
+    # 1. Intent Detection - expanded with Dutch/French HR terms
+    triggers = [
+        "form", "template", "aanvraag", "formulier", "document", "sheet", 
+        "application", "overdracht", "transfer", "verlof", "vakantie",
+        "request", "demande", "congé", "download", "invullen", "fill"
+    ]
+    text_to_check = (query + " " + context).lower()
+    
+    if not any(t in text_to_check for t in triggers):
+        return []
+
+    # 2. Extract specific topics from query (naive but fast)
+    # remove common stop words to find the "topic"
+    stops = {
+        "what", "is", "the", "how", "to", "can", "i", "do", "for", "a", "an", 
+        "of", "in", "on", "my", "form", "template", "waar", "hoe", "een", "het", "de"
+    }
+    query_words = [w for w in query.lower().split() if w.isalnum() and w not in stops]
+    
+    if not query_words:
+        return []
+
+    found_forms = []
+    
+    try:
+        # 3. Simple Search in Documents Table
+        # We look for files that are relevant to the query topic
+        # Relaxed: No longer requires 'form' in filename - just relevance
+        
+        # Get all active filenames for this company (usually small list < 1000)
+        # For larger scale, we'd use a DB-side text search function
+        res = supabase.table("documents").select("filename").eq("company_id", company_id).eq("is_active", True).execute()
+        all_files = [d['filename'] for d in res.data]
+        
+        candidates = []
+        for fname in all_files:
+            fname_lower = fname.lower()
+            # Match if filename relates to the query topic (at least one word match)
+            is_relevant = any(w in fname_lower for w in query_words)
+            if is_relevant:
+                candidates.append(fname)
+        
+        # Limit to 3 most relevant
+        candidates = candidates[:3]
+        
+        # 4. Generate Signed URLs
+        for fname in candidates:
+            try:
+                # 3600 seconds = 1 hour
+                # Sanitize company_id for storage path (must match upload path)
+                import re
+                safe_company_id = re.sub(r'[^\w\-]', '_', company_id)
+                path = f"{safe_company_id}/{fname}"
+                url_res = supabase.storage.from_("documents").create_signed_url(path, 3600)
+                
+                # Check if response is a string (URL) or dict (depending on SDK version)
+                # supabase-py v2 usually returns dict with 'signedURL' or just str?
+                # Let's handle safe extraction
+                signed_url = url_res
+                if isinstance(url_res, dict):
+                     signed_url = url_res.get("signedURL") or url_res.get("signed_url")
+
+                if signed_url:
+                    found_forms.append({"filename": fname, "url": signed_url})
+            except Exception as e:
+                logger.warning(f"Failed to sign URL for {fname}: {e}")
+                
+    except Exception as e:
+        logger.error(f"Form search validation failed: {e}")
+        
+    return found_forms

@@ -286,11 +286,25 @@ st.markdown("""
 
 # --- SECRETS HANDLING ---
 def get_secret(key_name):
-    if key_name in os.environ: return os.environ[key_name]
+    """Get secret from environment or Streamlit secrets with validation."""
+    if not key_name or not isinstance(key_name, str):
+        return None
+    
+    # Try environment variable first
+    if key_name in os.environ:
+        value = os.environ[key_name]
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    
+    # Try Streamlit secrets
     try:
-        if key_name in st.secrets: return st.secrets[key_name]
-    except:
-        pass
+        if key_name in st.secrets:
+            value = st.secrets[key_name]
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    except Exception as e:
+        logger.warning(f"Error accessing Streamlit secrets for {key_name}: {e}")
+    
     return None
 
 SUPABASE_URL = get_secret("SUPABASE_URL")
@@ -298,8 +312,16 @@ SUPABASE_KEY = get_secret("SUPABASE_KEY")
 FIXED_GROQ_KEY = get_secret("FIXED_GROQ_KEY")
 HF_API_KEY = get_secret("HF_API_KEY")
 
-if not all([SUPABASE_URL, SUPABASE_KEY, FIXED_GROQ_KEY, HF_API_KEY]):
-    st.error("❌ Missing API Keys. Please check your Secrets or Environment Variables.")
+# Validate API keys are strings and not empty
+api_keys_valid = all([
+    isinstance(SUPABASE_URL, str) and SUPABASE_URL.strip(),
+    isinstance(SUPABASE_KEY, str) and SUPABASE_KEY.strip(),
+    isinstance(FIXED_GROQ_KEY, str) and FIXED_GROQ_KEY.strip(),
+    isinstance(HF_API_KEY, str) and HF_API_KEY.strip()
+])
+
+if not api_keys_valid:
+    st.error("❌ Missing or invalid API Keys. Please check your Secrets or Environment Variables.")
     st.stop()
 
 # --- 2. STATE ---
@@ -310,6 +332,8 @@ if "view" not in st.session_state: st.session_state.view = "chat"
 
 @st.cache_resource
 def init_supabase():
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise ValueError("Supabase URL and key are required")
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 supabase = init_supabase()
@@ -338,8 +362,18 @@ def get_embeddings_batch(texts):
     return None
 
 def sanitize_filename(filename):
-    name = filename.replace(" ", "_")
-    return re.sub(r'[^a-zA-Z0-9._-]', '', name)
+    if not filename or not isinstance(filename, str):
+        return "unknown_file"
+    # Limit filename length to prevent path traversal
+    name = filename[:100].replace(" ", "_")
+    # Remove path traversal attempts and dangerous characters
+    name = re.sub(r'[/\\:*?"<>|]', '', name)
+    name = re.sub(r'\.\.', '', name)  # Remove directory traversal
+    name = re.sub(r'[^a-zA-Z0-9._-]', '', name)
+    # Ensure filename doesn't start with a dot (hidden files)
+    if name.startswith('.'):
+        name = 'file_' + name[1:] if len(name) > 1 else 'file'
+    return name or "unknown_file"
 
 def normalize_query(query):
     """Normalize query but keep original intent."""
@@ -488,18 +522,27 @@ def get_chunk_counts(company_id):
     Strategy: Query chunks by filename (ASCII) to avoid emoji encoding issues.
     We get the list of document filenames from the documents table and check each one.
     """
+    if not company_id or not isinstance(company_id, str):
+        logger.error("Invalid company_id provided to get_chunk_counts")
+        return {}
+    
     try:
         # First get the list of filenames we need to check
         docs = supabase.table("documents").select("filename").eq("company_id", company_id).execute()
-        filenames = [doc['filename'] for doc in docs.data]
+        if not docs or not docs.data:
+            return {}
+        
+        filenames = [doc['filename'] for doc in docs.data if isinstance(doc, dict) and 'filename' in doc]
         
         chunk_counts = {}
         for filename in filenames:
+            if not filename or not isinstance(filename, str):
+                continue
             # Query chunks by filename (ASCII) - no emoji encoding issues
-            result = supabase.table("document_chunks").select("id", count="exact").like(
+            result = supabase.table("document_chunks").select("id", count="exact").eq(
                 "metadata->>filename", filename
             ).execute()
-            chunk_counts[filename] = result.count if result.count else 0
+            chunk_counts[filename] = result.count if hasattr(result, 'count') and result.count else 0
         
         logger.info(f"Chunk counts for {company_id}: {chunk_counts}")
         return chunk_counts
@@ -528,6 +571,17 @@ def delete_document(filename, company_id):
 
 def process_and_store_document(file, company_id, force_overwrite=False):
     """Process and store document with support for PDF, DOCX, XLSX, PPTX."""
+    # Validate file object
+    if not file or not hasattr(file, 'name') or not hasattr(file, 'size'):
+        logger.error("Invalid file object provided")
+        return "error"
+    
+    # Check file size (50MB limit)
+    MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+    if file.size > MAX_FILE_SIZE:
+        logger.error(f"File too large: {file.size} bytes (max: {MAX_FILE_SIZE} bytes)")
+        return "error"
+    
     clean_name = sanitize_filename(file.name)
     logger.info(f"Starting to process document: {clean_name}")
     
@@ -584,7 +638,9 @@ def process_and_store_document(file, company_id, force_overwrite=False):
 
     try:
         file.seek(0)
-        supabase.storage.from_("documents").upload(f"{company_id}/{clean_name}", file.read(), {"upsert": "true"})
+        # Sanitize company_id for storage path (remove emoji and special chars)
+        safe_company_id = re.sub(r'[^\w\-]', '_', company_id)
+        supabase.storage.from_("documents").upload(f"{safe_company_id}/{clean_name}", file.read(), {"upsert": "true"})
     except Exception as e:
         logger.warning(f"Storage upload failed (non-critical): {e}")
 
@@ -707,7 +763,12 @@ CRITICAL RULES:
 
 3. HONESTY: If the CONTEXT doesn't contain the answer, say so clearly.
 
-4. FORMAT: Use Markdown for tables and structure when helpful."""
+4. FORMAT: Use Markdown for tables and structure when helpful.
+
+5. FORMS & DOWNLOADS:
+   - If the context contains a "RECOMMENDED FORMS" section with links, you MUST mention them.
+   - Example: "You can download the form here: [link]."
+   - Only recommend forms that are explicitly listed in the context."""
     
     messages = [{"role": "system", "content": system_prompt}]
     for msg in history[-4:]: messages.append({"role": msg["role"], "content": msg["content"]})
