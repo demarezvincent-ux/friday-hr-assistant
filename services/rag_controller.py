@@ -264,7 +264,7 @@ async def get_context_with_strategy(
     # STEP 6: Form Discovery & Proactive Linking (Option B)
     # =========================================================================
     try:
-        forms = await get_relevant_forms(corrected_query, context_str, company_id, supabase)
+        forms = await get_relevant_forms(raw_query, corrected_query, context_str, company_id, supabase)
         if forms:
             form_section = "\n\n=== RECOMMENDED FORMS (Secure Downloads) ===\n"
             for f in forms:
@@ -279,54 +279,80 @@ async def get_context_with_strategy(
     return context_str, sources
 
 
-async def get_relevant_forms(query: str, context: str, company_id: str, supabase: Client) -> List[dict]:
+async def get_relevant_forms(raw_query: str, corrected_query: str, context: str, company_id: str, supabase: Client) -> List[dict]:
     """
     Discovery logic for Option B:
     1. Check if 'form', 'template', 'application' keywords exist in Context or Query.
     2. If yes, search DB for files matching query keywords AND 'form'/'template' etc.
     3. Generate 1-hour signed URLs.
+    
+    Uses BOTH raw_query (original language) and corrected_query (English) to match filenames.
     """
+    import re
+    
     # 1. Intent Detection - expanded with Dutch/French HR terms
     triggers = [
         "form", "template", "aanvraag", "formulier", "document", "sheet", 
         "application", "overdracht", "transfer", "verlof", "vakantie",
         "request", "demande", "congé", "download", "invullen", "fill"
     ]
-    text_to_check = (query + " " + context).lower()
+    text_to_check = (raw_query + " " + corrected_query + " " + context).lower()
     
-    if not any(t in text_to_check for t in triggers):
+    triggered_words = [t for t in triggers if t in text_to_check]
+    logger.info(f"Form Discovery: triggers found: {triggered_words}")
+    
+    if not triggered_words:
+        logger.info("Form Discovery: No triggers found, skipping")
         return []
 
-    # 2. Extract specific topics from query (naive but fast)
-    # remove common stop words to find the "topic"
+    # 2. Extract specific topics from BOTH queries (original language + translated)
+    # This allows matching Dutch filenames from Dutch queries AND English from English
     stops = {
+        # English - expanded
         "what", "is", "the", "how", "to", "can", "i", "do", "for", "a", "an", 
-        "of", "in", "on", "my", "form", "template", "waar", "hoe", "een", "het", "de"
+        "of", "in", "on", "my", "form", "template", "you", "me", "we", "they",
+        "with", "this", "that", "are", "was", "were", "been", "have", "has",
+        "will", "would", "could", "should", "may", "might", "get", "give",
+        "please", "provide", "want", "need", "there", "here",
+        # Dutch
+        "waar", "hoe", "een", "het", "de", "ik", "mijn", "je", "jouw", "dit", "dat",
+        "naar", "voor", "met", "bij", "om", "als", "maar", "dan", "wel", "niet",
+        "wil", "kan", "kun", "mag", "moet", "zal", "zou", "geven",
+        # French
+        "le", "la", "les", "un", "une", "des", "je", "tu", "il", "elle", "nous",
+        "vous", "comment", "quoi", "où", "pourquoi", "est", "sont", "être"
     }
-    query_words = [w for w in query.lower().split() if w.isalnum() and w not in stops]
+    
+    # Combine words from BOTH queries to match filenames in any language
+    combined_query = raw_query + " " + corrected_query
+    query_words = [w for w in combined_query.lower().split() if w.isalnum() and len(w) > 2 and w not in stops]
+    
+    logger.info(f"Form Discovery: raw='{raw_query[:50]}...', corrected='{corrected_query[:50]}...' -> extracted words: {query_words}")
     
     if not query_words:
+        logger.info("Form Discovery: No query words after stop-word filtering")
         return []
 
     found_forms = []
     
     try:
         # 3. Simple Search in Documents Table
-        # We look for files that are relevant to the query topic
-        # Relaxed: No longer requires 'form' in filename - just relevance
-        
-        # Get all active filenames for this company (usually small list < 1000)
-        # For larger scale, we'd use a DB-side text search function
         res = supabase.table("documents").select("filename").eq("company_id", company_id).eq("is_active", True).execute()
         all_files = [d['filename'] for d in res.data]
+        
+        logger.info(f"Form Discovery: {len(all_files)} active files in company")
         
         candidates = []
         for fname in all_files:
             fname_lower = fname.lower()
             # Match if filename relates to the query topic (at least one word match)
-            is_relevant = any(w in fname_lower for w in query_words)
-            if is_relevant:
+            # Also check if query word is PART of any word in filename (substring match)
+            matching_words = [w for w in query_words if w in fname_lower]
+            if matching_words:
                 candidates.append(fname)
+                logger.info(f"Form Discovery: '{fname}' matched by words: {matching_words}")
+        
+        logger.info(f"Form Discovery: {len(candidates)} candidates before limit: {candidates}")
         
         # Limit to 3 most relevant
         candidates = candidates[:3]
@@ -334,28 +360,49 @@ async def get_relevant_forms(query: str, context: str, company_id: str, supabase
         # 4. Generate Signed URLs
         for fname in candidates:
             try:
-                # 3600 seconds = 1 hour
                 # Sanitize company_id for storage path (must match upload path)
-                import re
                 safe_company_id = re.sub(r'[^\w\-]', '_', company_id)
                 path = f"{safe_company_id}/{fname}"
+                
+                logger.info(f"Form Discovery: Creating signed URL for path: {path}")
+                
                 url_res = supabase.storage.from_("documents").create_signed_url(path, 3600)
                 
-                # Check if response is a string (URL) or dict (depending on SDK version)
-                signed_url = url_res
-                if isinstance(url_res, dict):
-                     signed_url = url_res.get("signedURL") or url_res.get("signed_url")
+                logger.info(f"Form Discovery: Signed URL response type: {type(url_res)}, value: {str(url_res)[:200]}")
+                
+                # Handle all possible SDK response formats
+                signed_url = None
+                if isinstance(url_res, str):
+                    signed_url = url_res
+                elif isinstance(url_res, dict):
+                    # Try different possible key names (check each explicitly to avoid precedence issues)
+                    signed_url = url_res.get("signedURL")
+                    if not signed_url:
+                        signed_url = url_res.get("signedUrl")
+                    if not signed_url:
+                        signed_url = url_res.get("signed_url")
+                    if not signed_url and isinstance(url_res.get("data"), dict):
+                        signed_url = url_res["data"].get("signedUrl") or url_res["data"].get("signedURL")
+                elif hasattr(url_res, 'data') and isinstance(url_res.data, dict):
+                    # Object with .data attribute (newer SDK)
+                    signed_url = url_res.data.get("signedUrl") or url_res.data.get("signedURL")
+                
+                logger.info(f"Form Discovery: Extracted signed_url: {signed_url[:80] if signed_url else 'NONE'}...")
 
-                # Force download by appending download parameter to URL
-                # This ensures browser downloads the file instead of displaying raw content
+                # Build download URL
                 if signed_url:
                     separator = "&" if "?" in signed_url else "?"
-                    signed_url = f"{signed_url}{separator}download={fname}"
-                    found_forms.append({"filename": fname, "url": signed_url})
+                    download_url = f"{signed_url}{separator}download={fname}"
+                    found_forms.append({"filename": fname, "url": download_url})
+                    logger.info(f"Form Discovery: Successfully added form link for {fname}")
+                else:
+                    logger.warning(f"Form Discovery: Could not extract signed URL from response for {fname}")
+                    
             except Exception as e:
-                logger.warning(f"Failed to sign URL for {fname}: {e}")
+                logger.warning(f"Form Discovery: Failed to sign URL for {fname}: {e}")
                 
     except Exception as e:
-        logger.error(f"Form search validation failed: {e}")
+        logger.error(f"Form Discovery: Database query failed: {e}")
         
+    logger.info(f"Form Discovery: Returning {len(found_forms)} forms")
     return found_forms
