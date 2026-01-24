@@ -9,6 +9,7 @@ from typing import Optional
 
 import requests
 from pydantic import BaseModel, Field, ValidationError
+from services.agentic.rate_limiter import get_groq_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,9 @@ IMPORTANT: Output ONLY valid JSON, no markdown or explanation."""
 
     def _call_groq_sync(self, query: str) -> SearchParams:
         """Synchronous Groq API call."""
+        # Rate Limit check
+        get_groq_limiter().wait_if_needed()
+        
         try:
             response = requests.post(
                 self.api_url,

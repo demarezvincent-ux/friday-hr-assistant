@@ -1,0 +1,312 @@
+/* ============================================
+   FRIDAY - Hybrid Elite Design System v4.0
+   ============================================ */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap');
+
+:root {
+    /* Brand Colors */
+    --primary: #1A3C34;           /* Deep Forest Green */
+    --primary-light: #2A5248;     /* Lighter Green for hovers */
+    --primary-dim: rgba(26, 60, 52, 0.08);
+    
+    --accent: #D4AF37;            /* Subtle Gold Accent (if needed) */
+    
+    /* Neutrals */
+    --background: #F9F9F7;        /* Warm Off-White (Paper) */
+    --sidebar-bg: #F0F0EE;        /* Slightly darker warm grey */
+    --surface: #FFFFFF;           /* Pure White for cards */
+    
+    /* Text */
+    --text-primary: #1A3C34;      /* Use primary for text for consistency */
+    --text-secondary: #5C6F68;    /* Muted Slate Green */
+    --text-tertiary: #8C9F98;     /* Very Light */
+    
+    /* Structure */
+    --border: #E6E6E3;
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    
+    /* Shadows - Premium Soft Shadows */
+    --shadow-sm: 0 1px 2px rgba(26, 60, 52, 0.04);
+    --shadow-md: 0 4px 12px rgba(26, 60, 52, 0.06);
+    --shadow-lg: 0 12px 32px rgba(26, 60, 52, 0.08);
+    --shadow-hover: 0 8px 16px rgba(26, 60, 52, 0.1);
+}
+
+/* ============================================
+   GLOBAL & TYPOGRAPHY
+   ============================================ */
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif;
+    color: var(--text-primary);
+    background-color: var(--background);
+    line-height: 1.6;
+    font-size: 15px; /* Slightly easier to read */
+}
+
+h1, h2, h3, h4, h5, h6, .playfair {
+    font-family: 'Playfair Display', serif !important;
+    color: var(--text-primary) !important;
+    font-weight: 600;
+}
+
+h1 { letter-spacing: -0.02em; }
+h2 { letter-spacing: -0.01em; margin-bottom: 1rem; }
+
+/* Streamlit Main Container */
+.stApp {
+    background-color: var(--background);
+}
+
+/* Remove default top padding for cleaner look */
+.main .block-container {
+    padding-top: 2rem;
+    padding-bottom: 4rem;
+    max-width: 900px; /* Optimal reading width */
+}
+
+/* ============================================
+   SIDEBAR
+   ============================================ */
+[data-testid="stSidebar"] {
+    background-color: var(--sidebar-bg);
+    border-right: 1px solid rgba(26, 60, 52, 0.06);
+}
+
+/* Sidebar Branding Area (Logo) */
+[data-testid="stSidebarNav"] {
+    padding-top: 1rem;
+}
+
+/* Horizontal Rule in Sidebar */
+[data-testid="stSidebar"] hr {
+    margin: 1.5rem 0;
+    border-color: rgba(26, 60, 52, 0.1) !important;
+}
+
+/* Navigation Buttons (Style stButton to look like links) */
+[data-testid="stSidebar"] .stButton button {
+    background-color: transparent;
+    color: var(--text-secondary);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    text-align: left;
+    padding: 0.5rem 1rem;
+    font-weight: 500;
+    width: 100%;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+[data-testid="stSidebar"] .stButton button:hover {
+    color: var(--primary);
+    background-color: rgba(26, 60, 52, 0.04);
+    transform: translateX(2px); /* Subtle nudge */
+}
+
+/* Active State for Sidebar Buttons (handled via custom property in Python usually, 
+   but targeting the primary button style if used) */
+[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] button[kind="primary"] {
+    background-color: var(--primary) !important;
+    color: var(--surface) !important;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--primary);
+}
+
+/* ============================================
+   CHAT INTERFACE
+   ============================================ */
+
+/* Chat Message Container */
+[data-testid="stChatMessage"] {
+    background-color: transparent;
+    padding: 1.5rem 0;
+    gap: 1rem;
+    transition: background-color 0.2s ease;
+}
+
+/* Hover effect on messages for focus (optional) */
+[data-testid="stChatMessage"]:hover {
+    background-color: rgba(255,255,255,0.4);
+    border-radius: var(--radius-md);
+}
+
+/* Avatar Styling */
+[data-testid="stChatMessage"] [data-testid="stChatAvatar"] {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px; /* Soft square > Circle for modern feel */
+    border: 1px solid rgba(26, 60, 52, 0.1);
+    padding: 2px;
+    background: var(--surface);
+}
+
+/* Assistant Avatar specific */
+[data-testid="stChatMessage"][data-testid="assistant"] [data-testid="stChatAvatar"] {
+    background: var(--primary);
+    color: white;
+}
+
+/* Input Field Area - Fixed at bottom styling usually handles itself, 
+   but let's style the container */
+.stChatInput {
+    padding-bottom: 2rem;
+}
+
+.stChatInput textarea {
+    background-color: var(--surface) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-lg) !important;
+    box-shadow: var(--shadow-md) !important;
+    font-size: 16px !important; /* Prevent zoom on mobile */
+    padding: 1rem !important;
+    transition: all 0.2s ease;
+}
+
+.stChatInput textarea:focus {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 2px rgba(26, 60, 52, 0.1), var(--shadow-md) !important;
+}
+
+/* ============================================
+   COMPONENTS
+   ============================================ */
+
+/* File/Document Cards */
+.file-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.file-card:hover {
+    border-color: var(--primary-light);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+}
+
+.file-card .icon {
+    font-size: 1.2rem;
+    margin-right: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.file-card .title {
+    font-weight: 500;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+}
+
+/* Source Citations in Chat */
+.source-citation {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: var(--primary-dim);
+    border: 1px solid rgba(26, 60, 52, 0.1);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 99px;
+    margin: 0 2px;
+    text-decoration: none;
+    transition: all 0.15s ease;
+}
+
+.source-citation:hover {
+    background: rgba(26, 60, 52, 0.15);
+    color: var(--primary);
+    border-color: rgba(26, 60, 52, 0.2);
+}
+
+/* Buttons (Generic) */
+.stButton button {
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+/* Primary Action Buttons */
+.stButton button[kind="primary"] {
+    background: var(--primary);
+    color: white;
+    border: none;
+    box-shadow: var(--shadow-sm);
+}
+
+.stButton button[kind="primary"]:hover {
+    background: var(--primary-light);
+    box-shadow: var(--shadow-md);
+}
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-enter {
+    animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Thinking Indicator - Elegant Pulse */
+.thinking-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    opacity: 0.7;
+}
+
+.dot-pulse {
+    position: relative;
+    width: 6px;
+    height: 6px;
+    border-radius: 5px;
+    background-color: var(--primary);
+    color: var(--primary);
+    animation: dot-pulse 1.5s infinite linear;
+    animation-delay: 0.25s;
+}
+.dot-pulse::before, .dot-pulse::after {
+    content: "";
+    display: inline-block;
+    position: absolute;
+    top: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 5px;
+    background-color: var(--primary);
+    color: var(--primary);
+}
+.dot-pulse::before {
+    left: -12px;
+    animation: dot-pulse-before 1.5s infinite linear;
+    animation-delay: 0s;
+}
+.dot-pulse::after {
+    left: 12px;
+    animation: dot-pulse-after 1.5s infinite linear;
+    animation-delay: 0.5s;
+}
+
+@keyframes dot-pulse-before {
+    0% { transform: scale(1); } 30% { transform: scale(1.3); } 60%, 100% { transform: scale(1); }
+}
+@keyframes dot-pulse {
+    0% { transform: scale(1); } 30% { transform: scale(1.3); } 60%, 100% { transform: scale(1); }
+}
+@keyframes dot-pulse-after {
+    0% { transform: scale(1); } 30% { transform: scale(1.3); } 60%, 100% { transform: scale(1); }
+}
