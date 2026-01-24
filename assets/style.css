@@ -5,28 +5,37 @@
 
 :root {
     /* Brand Colors */
-    --primary: #1A3C34;           /* Deep Forest Green */
-    --primary-light: #2A5248;     /* Lighter Green for hovers */
+    --primary: #1A3C34;
+    /* Deep Forest Green */
+    --primary-light: #2A5248;
+    /* Lighter Green for hovers */
     --primary-dim: rgba(26, 60, 52, 0.08);
-    
-    --accent: #D4AF37;            /* Subtle Gold Accent (if needed) */
-    
+
+    --accent: #D4AF37;
+    /* Subtle Gold Accent (if needed) */
+
     /* Neutrals */
-    --background: #F9F9F7;        /* Warm Off-White (Paper) */
-    --sidebar-bg: #F0F0EE;        /* Slightly darker warm grey */
-    --surface: #FFFFFF;           /* Pure White for cards */
-    
+    --background: #F9F9F7;
+    /* Warm Off-White (Paper) */
+    --sidebar-bg: #F0F0EE;
+    /* Slightly darker warm grey */
+    --surface: #FFFFFF;
+    /* Pure White for cards */
+
     /* Text */
-    --text-primary: #1A3C34;      /* Use primary for text for consistency */
-    --text-secondary: #5C6F68;    /* Muted Slate Green */
-    --text-tertiary: #8C9F98;     /* Very Light */
-    
+    --text-primary: #1A3C34;
+    /* Use primary for text for consistency */
+    --text-secondary: #5C6F68;
+    /* Muted Slate Green */
+    --text-tertiary: #8C9F98;
+    /* Very Light */
+
     /* Structure */
     --border: #E6E6E3;
     --radius-sm: 8px;
     --radius-md: 12px;
     --radius-lg: 16px;
-    
+
     /* Shadows - Premium Soft Shadows */
     --shadow-sm: 0 1px 2px rgba(26, 60, 52, 0.04);
     --shadow-md: 0 4px 12px rgba(26, 60, 52, 0.06);
@@ -37,22 +46,37 @@
 /* ============================================
    GLOBAL & TYPOGRAPHY
    ============================================ */
-html, body, [class*="css"] {
+html,
+body,
+[class*="css"] {
     font-family: 'Inter', sans-serif;
     color: var(--text-primary);
     background-color: var(--background);
     line-height: 1.6;
-    font-size: 15px; /* Slightly easier to read */
+    font-size: 15px;
+    /* Slightly easier to read */
 }
 
-h1, h2, h3, h4, h5, h6, .playfair {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.playfair {
     font-family: 'Playfair Display', serif !important;
     color: var(--text-primary) !important;
     font-weight: 600;
 }
 
-h1 { letter-spacing: -0.02em; }
-h2 { letter-spacing: -0.01em; margin-bottom: 1rem; }
+h1 {
+    letter-spacing: -0.02em;
+}
+
+h2 {
+    letter-spacing: -0.01em;
+    margin-bottom: 1rem;
+}
 
 /* Streamlit Main Container */
 .stApp {
@@ -63,7 +87,8 @@ h2 { letter-spacing: -0.01em; margin-bottom: 1rem; }
 .main .block-container {
     padding-top: 2rem;
     padding-bottom: 4rem;
-    max-width: 900px; /* Optimal reading width */
+    max-width: 900px;
+    /* Optimal reading width */
 }
 
 /* ============================================
@@ -104,7 +129,8 @@ h2 { letter-spacing: -0.01em; margin-bottom: 1rem; }
 [data-testid="stSidebar"] .stButton button:hover {
     color: var(--primary);
     background-color: rgba(26, 60, 52, 0.04);
-    transform: translateX(2px); /* Subtle nudge */
+    transform: translateX(2px);
+    /* Subtle nudge */
 }
 
 /* Active State for Sidebar Buttons (handled via custom property in Python usually, 
@@ -123,25 +149,48 @@ h2 { letter-spacing: -0.01em; margin-bottom: 1rem; }
 /* Chat Message Container */
 [data-testid="stChatMessage"] {
     background-color: transparent;
-    padding: 1.5rem 0;
-    gap: 1rem;
+    padding: 1rem 0.5rem;
+    gap: 0.5rem;
     transition: background-color 0.2s ease;
+    margin-bottom: 0.5rem;
 }
 
-/* Hover effect on messages for focus (optional) */
-[data-testid="stChatMessage"]:hover {
-    background-color: rgba(255,255,255,0.4);
-    border-radius: var(--radius-md);
+/* User Message Bubble */
+[data-testid="stChatMessage"][data-testid="user"] {
+    background-color: transparent;
+    /* Keep user transparent or slight tint if preferred */
+    flex-direction: row-reverse;
+    /* Optional: Move user to right if supported by Streamlit structure */
+}
+
+[data-testid="stChatMessage"][data-testid="user"] div[data-testid="stMarkdownContainer"] {
+    background-color: #F3F4F6;
+    padding: 0.75rem 1rem;
+    border-radius: 12px 12px 0 12px;
+    /* Bubble corner */
+    display: inline-block;
+    color: var(--text-primary);
+}
+
+/* Assistant Message Bubble */
+[data-testid="stChatMessage"][data-testid="assistant"] div[data-testid="stMarkdownContainer"] {
+    background-color: white;
+    padding: 0.75rem 1rem;
+    border-radius: 0 12px 12px 12px;
+    /* Bubble corner */
+    border: 1px solid rgba(26, 60, 52, 0.08);
+    display: inline-block;
+    color: var(--text-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 /* Avatar Styling */
 [data-testid="stChatMessage"] [data-testid="stChatAvatar"] {
-    width: 40px;
-    height: 40px;
-    border-radius: 12px; /* Soft square > Circle for modern feel */
-    border: 1px solid rgba(26, 60, 52, 0.1);
-    padding: 2px;
-    background: var(--surface);
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    /* Soft square */
+    margin-top: 4px;
 }
 
 /* Assistant Avatar specific */
@@ -161,7 +210,8 @@ h2 { letter-spacing: -0.01em; margin-bottom: 1rem; }
     border: 1px solid var(--border) !important;
     border-radius: var(--radius-lg) !important;
     box-shadow: var(--shadow-md) !important;
-    font-size: 16px !important; /* Prevent zoom on mobile */
+    font-size: 16px !important;
+    /* Prevent zoom on mobile */
     padding: 1rem !important;
     transition: all 0.2s ease;
 }
@@ -252,8 +302,15 @@ h2 { letter-spacing: -0.01em; margin-bottom: 1rem; }
    ANIMATIONS
    ============================================ */
 @keyframes fadeInUp {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .animate-enter {
@@ -279,7 +336,9 @@ h2 { letter-spacing: -0.01em; margin-bottom: 1rem; }
     animation: dot-pulse 1.5s infinite linear;
     animation-delay: 0.25s;
 }
-.dot-pulse::before, .dot-pulse::after {
+
+.dot-pulse::before,
+.dot-pulse::after {
     content: "";
     display: inline-block;
     position: absolute;
@@ -290,11 +349,13 @@ h2 { letter-spacing: -0.01em; margin-bottom: 1rem; }
     background-color: var(--primary);
     color: var(--primary);
 }
+
 .dot-pulse::before {
     left: -12px;
     animation: dot-pulse-before 1.5s infinite linear;
     animation-delay: 0s;
 }
+
 .dot-pulse::after {
     left: 12px;
     animation: dot-pulse-after 1.5s infinite linear;
@@ -302,11 +363,46 @@ h2 { letter-spacing: -0.01em; margin-bottom: 1rem; }
 }
 
 @keyframes dot-pulse-before {
-    0% { transform: scale(1); } 30% { transform: scale(1.3); } 60%, 100% { transform: scale(1); }
+    0% {
+        transform: scale(1);
+    }
+
+    30% {
+        transform: scale(1.3);
+    }
+
+    60%,
+    100% {
+        transform: scale(1);
+    }
 }
+
 @keyframes dot-pulse {
-    0% { transform: scale(1); } 30% { transform: scale(1.3); } 60%, 100% { transform: scale(1); }
+    0% {
+        transform: scale(1);
+    }
+
+    30% {
+        transform: scale(1.3);
+    }
+
+    60%,
+    100% {
+        transform: scale(1);
+    }
 }
+
 @keyframes dot-pulse-after {
-    0% { transform: scale(1); } 30% { transform: scale(1.3); } 60%, 100% { transform: scale(1); }
+    0% {
+        transform: scale(1);
+    }
+
+    30% {
+        transform: scale(1.3);
+    }
+
+    60%,
+    100% {
+        transform: scale(1);
+    }
 }

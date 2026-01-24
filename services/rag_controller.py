@@ -368,26 +368,34 @@ async def get_relevant_forms(raw_query: str, corrected_query: str, context: str,
                 
                 url_res = supabase.storage.from_("documents").create_signed_url(path, 3600)
                 
-                logger.info(f"Form Discovery: Signed URL response type: {type(url_res)}, value: {str(url_res)[:200]}")
+                logger.info(f"Form Discovery: Signed URL response: type={type(url_res).__name__}, has_data={hasattr(url_res, 'data')}")
                 
-                # Handle all possible SDK response formats
+                # Handle all possible SDK response formats (priority order matters!)
                 signed_url = None
-                if isinstance(url_res, str):
-                    signed_url = url_res
-                elif isinstance(url_res, dict):
-                    # Try different possible key names (check each explicitly to avoid precedence issues)
-                    signed_url = url_res.get("signedURL")
-                    if not signed_url:
-                        signed_url = url_res.get("signedUrl")
-                    if not signed_url:
-                        signed_url = url_res.get("signed_url")
+                
+                # Priority 1: Object with .data attribute (newer Supabase SDK - most common)
+                if hasattr(url_res, 'data') and url_res.data:
+                    data = url_res.data
+                    if isinstance(data, dict):
+                        signed_url = data.get("signedUrl") or data.get("signedURL") or data.get("signed_url")
+                    elif isinstance(data, str) and data.startswith("http"):
+                        signed_url = data
+                    logger.info(f"Form Discovery: Extracted from .data attribute: {bool(signed_url)}")
+                
+                # Priority 2: Direct dict response (older SDK format)
+                if not signed_url and isinstance(url_res, dict):
+                    signed_url = url_res.get("signedURL") or url_res.get("signedUrl") or url_res.get("signed_url")
                     if not signed_url and isinstance(url_res.get("data"), dict):
                         signed_url = url_res["data"].get("signedUrl") or url_res["data"].get("signedURL")
-                elif hasattr(url_res, 'data') and isinstance(url_res.data, dict):
-                    # Object with .data attribute (newer SDK)
-                    signed_url = url_res.data.get("signedUrl") or url_res.data.get("signedURL")
+                    logger.info(f"Form Discovery: Extracted from dict: {bool(signed_url)}")
                 
-                logger.info(f"Form Discovery: Extracted signed_url: {signed_url[:80] if signed_url else 'NONE'}...")
+                # Priority 3: Direct string (unlikely but handle it)
+                if not signed_url and isinstance(url_res, str) and url_res.startswith("http"):
+                    signed_url = url_res
+                    logger.info(f"Form Discovery: Extracted from string: {bool(signed_url)}")
+                
+                logger.info(f"Form Discovery: Final signed_url: {signed_url[:80] if signed_url else 'NONE'}...")
+
 
                 # Build download URL
                 if signed_url:
