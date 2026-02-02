@@ -46,7 +46,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          # Support both standard naming and user's specific key name
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY || secrets.FIXED_GROQ_KEY }}
           HF_API_KEY: ${{ secrets.HF_API_KEY }}
         run: |
           python scripts/legal_scraper.py \
