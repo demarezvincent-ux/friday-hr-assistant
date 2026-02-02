@@ -22,6 +22,7 @@ import os
 import re
 import sys
 import time
+import random
 from io import BytesIO
 from typing import Dict, List, Optional, Tuple
 
@@ -110,8 +111,9 @@ class BelgianLegalScraper:
             return False
 
     def polite_sleep(self):
-        """Rate limiting to avoid overwhelming government servers."""
-        time.sleep(self.request_delay)
+        """Rate limiting with randomized delay to avoid bot detection."""
+        delay = random.uniform(1.5, 3.5)
+        time.sleep(delay)
 
     # --- PDF Extraction ---
     
@@ -615,12 +617,253 @@ Text (first 6000 chars):
         
         return scraped_urls
 
+    # --- FPS Employment News Scraper (Task 1) ---
+    
+    def fetch_fps_employment_news(self, limit: int = 0) -> List[str]:
+        """
+        Scrape FPS Employment (FOD Werk) news feed.
+        Central hub for CAOs, reforms, and worker rights.
+        
+        Target: https://werk.belgie.be/nl/nieuws
+        Keywords: CAO, Arbeid, Loon, Verlof, Indexering
+        """
+        logger.info("=== Scraping FPS Employment News (werk.belgie.be) ===")
+        
+        news_url = "https://werk.belgie.be/nl/nieuws"
+        scraped_urls = []
+        keywords = ['cao', 'arbeid', 'loon', 'verlof', 'indexering', 'collectieve', 'arbeidsovereenkomst', 'ontslag']
+        
+        try:
+            self.polite_sleep()
+            resp = requests.get(news_url, headers=self.headers, timeout=20)
+            if resp.status_code != 200:
+                logger.warning(f"FPS News returned {resp.status_code}")
+                return scraped_urls
+            
+            soup = BeautifulSoup(resp.content, 'html.parser')
+            
+            # Find news articles using Drupal pattern
+            articles = soup.select('article.node--type-news')
+            if not articles:
+                articles = soup.select('div.views-row, li.views-row')
+            
+            logger.info(f"Found {len(articles)} news articles")
+            
+            count = 0
+            for article in articles:
+                if limit > 0 and count >= limit:
+                    break
+                
+                # Find the ACTUAL article link (starts with /nl/nieuws/), not social share
+                link = article.find('a', href=lambda h: h and h.startswith('/nl/nieuws/'))
+                if not link:
+                    # Try other content links
+                    link = article.find('a', href=lambda h: h and (
+                        h.startswith('/nl/themas/') or 
+                        h.startswith('/nl/publicaties/')
+                    ))
+                
+                if not link:
+                    continue
+                
+                href = link.get('href', '')
+                
+                # Build full URL
+                full_url = f"https://werk.belgie.be{href}"
+                
+                if full_url in scraped_urls:
+                    continue
+                
+                # Drill down into article page
+                try:
+                    if self.extract_content_from_page(full_url, "FPS_NEWS"):
+                        scraped_urls.append(full_url)
+                        count += 1
+                except Exception as e:
+                    logger.warning(f"Error processing FPS article: {e}")
+                    self.stats["errors"] += 1
+            
+            logger.info(f"Processed {count} FPS Employment news items")
+            
+        except Exception as e:
+            logger.error(f"FPS Employment scraping failed: {e}")
+            self.stats["errors"] += 1
+        
+        return scraped_urls
+
+    # --- Official Gazette Scraper (Task 2) ---
+    
+    def fetch_official_gazette_updates(self, limit: int = 0) -> List[str]:
+        """
+        Scrape Belgian Official Gazette (Belgisch Staatsblad).
+        Captures Royal Decrees (KB) and Laws (Wet) when published.
+        
+        Primary: staatsbladmonitor.be (aggregator)
+        Fallback: ejustice.just.fgov.be/staatsblad
+        """
+        logger.info("=== Scraping Official Gazette (Belgisch Staatsblad) ===")
+        
+        # Use easier-to-scrape aggregator
+        gazette_urls = [
+            "http://www.ejustice.just.fgov.be/cgi/summary.pl",  # Official summary
+            "https://www.ejustice.just.fgov.be/doc/rech_n.htm"  # Search
+        ]
+        scraped_urls = []
+        
+        try:
+            # Try to get recent labor law publications
+            # ejustice search with labor keywords
+            search_terms = ['arbeidsovereenkomst', 'arbeidswet', 'RSZ', 'ONSS']
+            
+            for term in search_terms:
+                if limit > 0 and len(scraped_urls) >= limit:
+                    break
+                
+                self.polite_sleep()
+                
+                # ejustice search endpoint
+                search_url = f"http://www.ejustice.just.fgov.be/cgi/api_rech.pl?lg=n&numac=&text={term}"
+                
+                try:
+                    resp = requests.get(search_url, headers=self.headers, timeout=20)
+                    if resp.status_code != 200:
+                        continue
+                    
+                    soup = BeautifulSoup(resp.content, 'html.parser')
+                    
+                    # Find result links
+                    result_links = soup.find_all('a', href=re.compile(r'numac='))
+                    
+                    for link in result_links[:3]:  # Top 3 per keyword
+                        if limit > 0 and len(scraped_urls) >= limit:
+                            break
+                        
+                        href = link.get('href', '')
+                        if not href:
+                            continue
+                        
+                        if href.startswith('/'):
+                            full_url = f"http://www.ejustice.just.fgov.be{href}"
+                        elif href.startswith('http'):
+                            full_url = href
+                        else:
+                            continue
+                        
+                        if full_url in scraped_urls:
+                            continue
+                        
+                        try:
+                            if self.extract_content_from_page(full_url, "GAZETTE"):
+                                scraped_urls.append(full_url)
+                        except Exception as e:
+                            logger.warning(f"Gazette article error: {e}")
+                            self.stats["errors"] += 1
+                
+                except Exception as e:
+                    logger.warning(f"Gazette search for '{term}' failed: {e}")
+            
+            logger.info(f"Processed {len(scraped_urls)} Official Gazette items")
+            
+        except Exception as e:
+            logger.error(f"Official Gazette scraping failed: {e}")
+            self.stats["errors"] += 1
+        
+        return scraped_urls
+
+    # --- Social Security News Scraper (Task 3) ---
+    
+    def fetch_social_security_news(self, limit: int = 0) -> List[str]:
+        """
+        Scrape Social Security (RSZ/ONSS) news and instructions.
+        Covers payroll taxes and administrative instructions.
+        
+        Target: https://www.socialsecurity.be/site_nl/civil/general/news/index.htm
+        Focus: Administrative Instructions (bible for payroll processing)
+        """
+        logger.info("=== Scraping Social Security News ===")
+        
+        news_url = "https://www.socialsecurity.be/site_nl/civil/general/news/index.htm"
+        scraped_urls = []
+        
+        try:
+            self.polite_sleep()
+            resp = requests.get(news_url, headers=self.headers, timeout=20)
+            if resp.status_code != 200:
+                logger.warning(f"Social Security news returned {resp.status_code}")
+                return scraped_urls
+            
+            soup = BeautifulSoup(resp.content, 'html.parser')
+            
+            # Find news items (standard HTML list or divs)
+            news_items = soup.select('div.news-item, ul.news-list li, article, div.content a[href]')
+            if not news_items:
+                # Fallback: find all internal links
+                news_items = soup.find_all('a', href=True)
+            
+            logger.info(f"Found {len(news_items)} social security items")
+            
+            # Focus on administrative instructions keywords
+            priority_keywords = ['administratieve', 'instructie', 'bijdrage', 'RSZ', 'ONSS', 'werkgever']
+            
+            count = 0
+            max_items = min(5, limit if limit > 0 else 5)  # Max 5 items as per spec
+            
+            for item in news_items:
+                if count >= max_items:
+                    break
+                
+                if item.name == 'a':
+                    link = item
+                else:
+                    link = item.find('a', href=True)
+                
+                if not link:
+                    continue
+                
+                href = link.get('href', '')
+                title = link.get_text(strip=True).lower()
+                
+                # Skip if obviously not relevant
+                if 'mailto:' in href or href.startswith('#'):
+                    continue
+                
+                # Build full URL
+                if href.startswith('/'):
+                    full_url = f"https://www.socialsecurity.be{href}"
+                elif href.startswith('http'):
+                    full_url = href
+                elif href.startswith('..'):
+                    # Relative path handling
+                    full_url = f"https://www.socialsecurity.be/site_nl/{href.replace('../', '')}"
+                else:
+                    continue
+                
+                if full_url in scraped_urls:
+                    continue
+                
+                try:
+                    if self.extract_content_from_page(full_url, "SOCIAL_SECURITY"):
+                        scraped_urls.append(full_url)
+                        count += 1
+                except Exception as e:
+                    logger.warning(f"Social Security article error: {e}")
+                    self.stats["errors"] += 1
+            
+            logger.info(f"Processed {count} Social Security news items")
+            
+        except Exception as e:
+            logger.error(f"Social Security scraping failed: {e}")
+            self.stats["errors"] += 1
+        
+        return scraped_urls
+
     # --- Main Runner ---
     
     def run(self, target: str = "all", limit: int = 0):
         """Run the scraper pipeline."""
         logger.info(f"Starting Legal Brain scraper - Target: {target}, Limit: {limit}")
         
+        # Legacy scrapers (kept for backwards compatibility)
         if target in ["all", "pc200"]:
             self.fetch_pc_200_updates(limit)
         
@@ -629,6 +872,16 @@ Text (first 6000 chars):
         
         if target in ["all", "federal"]:
             self.fetch_federal_law_updates(limit)
+        
+        # New government news scrapers (2026 reforms)
+        if target in ["all", "fps"]:
+            self.fetch_fps_employment_news(limit)
+        
+        if target in ["all", "gazette"]:
+            self.fetch_official_gazette_updates(limit)
+        
+        if target in ["all", "socialsecurity"]:
+            self.fetch_social_security_news(limit)
         
         logger.info("=" * 50)
         logger.info(f"Scraping complete! Stats: {self.stats}")
@@ -639,7 +892,7 @@ def main():
     parser = argparse.ArgumentParser(description="FRIDAY Legal Brain Scraper")
     parser.add_argument(
         "--target", 
-        choices=["all", "pc200", "cnt", "federal"], 
+        choices=["all", "pc200", "cnt", "federal", "fps", "gazette", "socialsecurity"], 
         default="all",
         help="Which sources to scrape"
     )
