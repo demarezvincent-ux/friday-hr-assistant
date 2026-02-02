@@ -5,6 +5,7 @@ Coordinates Intelligence Engine, Hybrid Search, Reranker, and Semantic Cache.
 
 import asyncio
 import logging
+import re
 from typing import List, Tuple, Optional
 
 from supabase import Client
@@ -16,6 +17,19 @@ from services.web_search import cached_web_search, format_web_results_as_context
 from services.agentic.cache import SemanticCache, is_cache_available
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_fts_query(query: str) -> str:
+    """
+    Sanitize search string for Postgres to_tsquery.
+    Removes special characters that cause syntax errors (like ' in CAO's).
+    """
+    # Remove apostrophes, quotes, and tsquery special chars
+    sanitized = re.sub(r"['\"\(\)\[\]:&!|<>*]", " ", query)
+    # Collapse whitespace and filter short terms
+    terms = [t.strip() for t in sanitized.split() if len(t.strip()) > 2]
+    # Create pipe-delimited query (max 10 terms)
+    return " | ".join(terms[:10]) if terms else ""
 
 
 async def search_legal_knowledge(
@@ -31,9 +45,12 @@ async def search_legal_knowledge(
     Returns context string and list of sources.
     """
     try:
+        # Sanitize FTS string to prevent tsquery syntax errors (e.g., CAO's)
+        safe_fts = sanitize_fts_query(fts_string or query)
+        
         rpc_params = {
             "query_embedding": query_embedding,
-            "text_search_query": fts_string or query.lower(),
+            "text_search_query": safe_fts,
             "match_threshold": 0.15,
             "match_count": match_count,
             "source_filter": source_filter

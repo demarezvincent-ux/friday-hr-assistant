@@ -289,6 +289,231 @@ Text (first 6000 chars):
             self.stats["errors"] += 1
             return False
 
+    # --- Recursive Spider (Phase 1 Engine Upgrade) ---
+    
+    def recursive_crawl(
+        self, 
+        entry_url: str, 
+        source_tag: str,
+        max_depth: int = 2,
+        domain_filter: str = None,
+        limit: int = 0
+    ) -> List[str]:
+        """
+        Recursive crawler with depth control.
+        Follows internal links within target domain up to max_depth.
+        
+        Args:
+            entry_url: Starting URL
+            source_tag: Tag for metadata (e.g., FOD_THEMAS)
+            max_depth: Maximum crawl depth (default 2)
+            domain_filter: Only follow links containing this (e.g., '/nl/')
+            limit: Max documents to process (0=unlimited)
+        """
+        from urllib.parse import urlparse, urljoin
+        
+        visited = set()
+        queue = [(entry_url, 0)]  # (url, depth)
+        scraped_urls = []
+        base_domain = urlparse(entry_url).netloc
+        
+        logger.info(f"=== Recursive Crawl: {entry_url} (max_depth={max_depth}) ===")
+        
+        while queue:
+            if limit > 0 and len(scraped_urls) >= limit:
+                break
+            
+            url, depth = queue.pop(0)
+            
+            # Skip if visited or too deep
+            if url in visited or depth > max_depth:
+                continue
+            visited.add(url)
+            
+            try:
+                self.polite_sleep()
+                resp = requests.get(url, headers=self.headers, timeout=20)
+                if resp.status_code != 200:
+                    continue
+                
+                soup = BeautifulSoup(resp.content, 'html.parser')
+                
+                # Check if it's a PDF
+                if url.lower().endswith('.pdf'):
+                    # Process PDF directly
+                    pdf_text, method = self.extract_text_from_pdf(resp.content)
+                    if pdf_text and len(pdf_text) > 100:
+                        # Extract title from URL
+                        title = url.split('/')[-1].replace('.pdf', '')
+                        metadata = {
+                            "category": "external_legislation",
+                            "source_domain": base_domain,
+                            "exclude_from_chat": True,
+                            "title": title,
+                            "crawl_depth": depth
+                        }
+                        if self.save_to_supabase(pdf_text, url, source_tag, metadata):
+                            scraped_urls.append(url)
+                            logger.info(f"[Depth {depth}] PDF: {url[:60]}...")
+                    continue
+                
+                # Extract main content for HTML pages
+                main_content = (
+                    soup.select_one('#main-content') or
+                    soup.select_one('.region-content') or
+                    soup.select_one('main') or
+                    soup.select_one('article') or
+                    soup.select_one('.content')
+                )
+                
+                if main_content:
+                    text = main_content.get_text(separator='\n', strip=True)
+                    if text and len(text) > 300:
+                        # Extract title
+                        title_tag = soup.find('h1') or soup.find('title')
+                        title = title_tag.get_text(strip=True) if title_tag else url.split('/')[-1]
+                        
+                        metadata = {
+                            "category": "external_legislation",
+                            "source_domain": base_domain,
+                            "exclude_from_chat": True,
+                            "title": title[:200],
+                            "crawl_depth": depth
+                        }
+                        
+                        content_hash = self.get_document_hash(text)
+                        if not self.is_in_db(content_hash):
+                            if self.save_to_supabase(text, url, source_tag, metadata):
+                                scraped_urls.append(url)
+                                logger.info(f"[Depth {depth}] HTML: {url[:60]}...")
+                
+                # Find child links (only if not at max depth)
+                if depth < max_depth:
+                    for link in soup.find_all('a', href=True):
+                        href = link.get('href', '')
+                        
+                        # Skip empty, anchors, mailto, external
+                        if not href or href.startswith('#') or 'mailto:' in href:
+                            continue
+                        
+                        # Build absolute URL
+                        full_url = urljoin(url, href)
+                        parsed = urlparse(full_url)
+                        
+                        # Must be same domain
+                        if parsed.netloc != base_domain:
+                            continue
+                        
+                        # Apply domain filter (e.g., '/nl/')
+                        if domain_filter and domain_filter not in full_url:
+                            continue
+                        
+                        # Add to queue
+                        if full_url not in visited:
+                            queue.append((full_url, depth + 1))
+                
+            except Exception as e:
+                logger.warning(f"Crawl error at {url[:50]}...: {e}")
+                self.stats["errors"] += 1
+        
+        logger.info(f"Recursive crawl complete: {len(scraped_urls)} documents from {len(visited)} pages")
+        return scraped_urls
+
+    # --- FOD Werk Themas Scraper (Phase 2) ---
+    
+    def fetch_fod_themas(self, limit: int = 0) -> List[str]:
+        """
+        Recursive crawl of FOD Werk Themas.
+        Entry: https://werk.belgie.be/nl/themas
+        Goal: Capture "Verklarende nota's" on contracts, holidays, well-being.
+        """
+        logger.info("=== Scraping FOD Werk Themas (Recursive) ===")
+        
+        entry_url = "https://werk.belgie.be/nl/themas"
+        return self.recursive_crawl(
+            entry_url=entry_url,
+            source_tag="FOD_THEMAS",
+            max_depth=2,
+            domain_filter="/nl/",
+            limit=limit
+        )
+
+    # --- NAR CAOs Scraper (Phase 2) ---
+    
+    def fetch_nar_caos(self, limit: int = 0) -> List[str]:
+        """
+        Scrape NAR (CNT) CAO registry.
+        Entry: http://www.cnt-nar.be/CAO-orig.htm
+        Goal: Extract CAO PDFs with numbers from filenames.
+        """
+        logger.info("=== Scraping NAR CAO Registry ===")
+        
+        entry_url = "http://www.cnt-nar.be/CAO-orig.htm"
+        scraped_urls = []
+        
+        try:
+            self.polite_sleep()
+            resp = requests.get(entry_url, headers=self.headers, timeout=20)
+            if resp.status_code != 200:
+                logger.warning(f"NAR CAO page returned {resp.status_code}")
+                return scraped_urls
+            
+            soup = BeautifulSoup(resp.content, 'html.parser')
+            
+            # Find all CAO PDF links
+            pdf_links = soup.find_all('a', href=lambda h: h and '.pdf' in h.lower())
+            logger.info(f"Found {len(pdf_links)} CAO PDF links")
+            
+            count = 0
+            for link in pdf_links:
+                if limit > 0 and count >= limit:
+                    break
+                
+                href = link.get('href', '')
+                if not href:
+                    continue
+                
+                # Build full URL
+                if href.startswith('/'):
+                    full_url = f"http://www.cnt-nar.be{href}"
+                elif href.startswith('http'):
+                    full_url = href
+                else:
+                    full_url = f"http://www.cnt-nar.be/{href}"
+                
+                # Extract CAO number from filename
+                filename = href.split('/')[-1]
+                cao_match = re.search(r'cao[_-]?(\d+)', filename.lower())
+                cao_number = cao_match.group(1) if cao_match else filename.replace('.pdf', '')
+                
+                # Download and process PDF
+                try:
+                    self.polite_sleep()
+                    pdf_resp = requests.get(full_url, headers=self.headers, timeout=30)
+                    if pdf_resp.status_code == 200:
+                        pdf_text, method = self.extract_text_from_pdf(pdf_resp.content)
+                        if pdf_text and len(pdf_text) > 100:
+                            metadata = {
+                                "category": "external_legislation",
+                                "source_domain": "cnt-nar.be",
+                                "exclude_from_chat": True,
+                                "title": f"CAO {cao_number}",
+                                "cao_number": cao_number
+                            }
+                            if self.save_to_supabase(pdf_text, full_url, "NAR_CAO", metadata):
+                                scraped_urls.append(full_url)
+                                count += 1
+                                logger.info(f"Processed CAO {cao_number}")
+                except Exception as e:
+                    logger.warning(f"Failed to process CAO: {e}")
+                    self.stats["errors"] += 1
+            
+        except Exception as e:
+            logger.error(f"NAR CAO scraping failed: {e}")
+            self.stats["errors"] += 1
+        
+        return scraped_urls
+
     # --- 2-Step Crawler Helper ---
     
     def extract_content_from_page(self, page_url: str, source_tag: str) -> bool:
@@ -883,6 +1108,13 @@ Text (first 6000 chars):
         if target in ["all", "socialsecurity"]:
             self.fetch_social_security_news(limit)
         
+        # Recursive crawlers (high-volume)
+        if target in ["all", "themas"]:
+            self.fetch_fod_themas(limit)
+        
+        if target in ["all", "nar"]:
+            self.fetch_nar_caos(limit)
+        
         logger.info("=" * 50)
         logger.info(f"Scraping complete! Stats: {self.stats}")
         return self.stats
@@ -892,7 +1124,7 @@ def main():
     parser = argparse.ArgumentParser(description="FRIDAY Legal Brain Scraper")
     parser.add_argument(
         "--target", 
-        choices=["all", "pc200", "cnt", "federal", "fps", "gazette", "socialsecurity"], 
+        choices=["all", "pc200", "cnt", "federal", "fps", "gazette", "socialsecurity", "themas", "nar"], 
         default="all",
         help="Which sources to scrape"
     )
