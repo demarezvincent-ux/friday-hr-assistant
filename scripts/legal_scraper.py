@@ -287,68 +287,183 @@ Text (first 6000 chars):
             self.stats["errors"] += 1
             return False
 
-    # --- PC 200 Scraper ---
+    # --- 2-Step Crawler Helper ---
+    
+    def extract_content_from_page(self, page_url: str, source_tag: str) -> bool:
+        """
+        2-Step Crawler: Extract content from a sub-page.
+        Step 1: Look for PDF download links
+        Step 2: If no PDF, scrape the main HTML content
+        
+        Returns True if content was successfully processed.
+        """
+        try:
+            self.polite_sleep()
+            resp = requests.get(page_url, headers=self.headers, timeout=20)
+            if resp.status_code != 200:
+                logger.warning(f"Sub-page returned {resp.status_code}: {page_url[:60]}...")
+                return False
+            
+            soup = BeautifulSoup(resp.content, 'html.parser')
+            
+            # Step 1: Look for PDF download links
+            pdf_links = soup.select('span.file a[href$=".pdf"]')
+            if not pdf_links:
+                pdf_links = soup.find_all('a', href=lambda h: h and '.pdf' in h.lower())
+            
+            if pdf_links:
+                # Found PDF - download and process
+                href = pdf_links[0].get('href', '')
+                if href:
+                    if href.startswith('/'):
+                        pdf_url = f"https://werk.belgie.be{href}"
+                    elif href.startswith('http'):
+                        pdf_url = href
+                    else:
+                        pdf_url = f"https://werk.belgie.be/{href}"
+                    
+                    try:
+                        pdf_resp = requests.get(pdf_url, headers=self.headers, timeout=30)
+                        if pdf_resp.status_code == 200 and len(pdf_resp.content) > 1000:
+                            content_hash = self.get_document_hash(pdf_resp.content)
+                            if self.is_in_db(content_hash):
+                                logger.info(f"Skipping duplicate PDF: {pdf_url[:50]}...")
+                                self.stats["skipped"] += 1
+                                return True  # Still considered success
+                            
+                            text, method = self.extract_text_from_pdf(pdf_resp.content)
+                            if text and len(text) > 100:
+                                if self.save_to_supabase(text, pdf_url, source_tag):
+                                    logger.info(f"Processed PDF: {pdf_url[:50]}...")
+                                    return True
+                    except Exception as e:
+                        logger.warning(f"PDF download failed for {pdf_url[:50]}...: {e}")
+            
+            # Step 2: No PDF found - scrape HTML content
+            content_div = soup.select_one('div.content') or soup.select_one('div.main-content') or soup.select_one('article')
+            if content_div:
+                text = content_div.get_text(separator='\n', strip=True)
+                if text and len(text) > 200:
+                    content_hash = self.get_document_hash(text)
+                    if self.is_in_db(content_hash):
+                        logger.info(f"Skipping duplicate HTML: {page_url[:50]}...")
+                        self.stats["skipped"] += 1
+                        return True
+                    
+                    if self.save_to_supabase(text, page_url, source_tag):
+                        logger.info(f"Processed HTML content: {page_url[:50]}...")
+                        return True
+            
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Failed to extract from {page_url[:50]}...: {e}")
+            self.stats["errors"] += 1
+            return False
+
+    # --- PC 200 Scraper (2-Step Crawler Walk) ---
     
     def fetch_pc_200_updates(self, limit: int = 0) -> List[str]:
         """
-        Scrapes PC 200 from multiple sources with fallbacks.
-        Primary: sfonds200.be homepage (WORKS)
-        Fallback: werk.belgie.be (structure changes frequently)
-        """
-        logger.info("=== Scraping PC 200 via Multiple Sources ===")
+        2-Step Crawler for PC 200 via Federal Government (FOD Werk).
+        Step 1: Fetch index page and find content links
+        Step 2: For each link, extract PDFs or HTML content
         
-        # These URLs have been tested - homepage approach works best
-        start_urls = [
-            "https://www.sfonds200.be/nl/",  # WORKS - Found PDFs here
-            "https://werk.belgie.be/nl/themas/paritaire-comites"  # Fallback - list page
-        ]
+        Target: https://werk.belgie.be/nl/themas/paritaire-comites/pc-200-aanvullend-paritair-comite-voor-de-bedienden
+        """
+        logger.info("=== Scraping PC 200 via 2-Step Crawler ===")
+        
+        index_url = "https://werk.belgie.be/nl/themas/paritaire-comites/pc-200-aanvullend-paritair-comite-voor-de-bedienden"
         scraped_urls = []
-
-        for base_url in start_urls:
-            try:
-                logger.info(f"Trying: {base_url}")
-                response = requests.get(base_url, headers=self.headers, timeout=20)
-                if response.status_code != 200:
-                    logger.warning(f"PC 200: {base_url} returned {response.status_code}")
+        
+        try:
+            logger.info(f"Fetching index: {index_url}")
+            resp = requests.get(index_url, headers=self.headers, timeout=20)
+            if resp.status_code != 200:
+                logger.warning(f"PC 200 index returned {resp.status_code}")
+                # Fallback to sfonds200
+                return self._fallback_sfonds200(limit)
+            
+            soup = BeautifulSoup(resp.content, 'html.parser')
+            
+            # Find content links in main area
+            all_links = soup.select('div.main-content a[href], article a[href], div.content a[href]')
+            if not all_links:
+                all_links = soup.find_all('a', href=True)
+            
+            # Filter for content pages
+            content_links = []
+            for link in all_links:
+                href = link.get('href', '')
+                if not href:
                     continue
-
-                soup = BeautifulSoup(response.content, 'html.parser')
-                # Find all PDF links
+                # Must contain /nl/, not be mailto, not be anchor
+                if '/nl/' in href and 'mailto:' not in href and not href.startswith('#'):
+                    if href.startswith('/'):
+                        full_url = f"https://werk.belgie.be{href}"
+                    elif href.startswith('http'):
+                        full_url = href
+                    else:
+                        continue
+                    if full_url not in content_links:
+                        content_links.append(full_url)
+            
+            logger.info(f"Found {len(content_links)} content links")
+            
+            # Process first N links
+            max_links = min(10, len(content_links)) if limit == 0 else min(limit, len(content_links))
+            count = 0
+            
+            for link_url in content_links[:max_links]:
+                if limit > 0 and count >= limit:
+                    break
+                
+                try:
+                    if self.extract_content_from_page(link_url, "PC 200"):
+                        scraped_urls.append(link_url)
+                        count += 1
+                except Exception as e:
+                    logger.warning(f"Error processing {link_url[:50]}...: {e}")
+                    self.stats["errors"] += 1
+            
+        except Exception as e:
+            logger.error(f"PC 200 crawl failed: {e}")
+            self.stats["errors"] += 1
+            # Try fallback
+            return self._fallback_sfonds200(limit)
+        
+        return scraped_urls
+    
+    def _fallback_sfonds200(self, limit: int = 0) -> List[str]:
+        """Fallback: Direct PDF scraping from sfonds200 homepage."""
+        logger.info("Trying fallback: sfonds200 homepage")
+        scraped_urls = []
+        
+        try:
+            resp = requests.get("https://www.sfonds200.be/nl/", headers=self.headers, timeout=20)
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.content, 'html.parser')
                 links = soup.find_all('a', href=lambda h: h and h.endswith('.pdf'))
                 
-                if not links:
-                    logger.info(f"No PDFs found at {base_url}")
-                    continue
-                
-                logger.info(f"Found {len(links)} PDF links at {base_url}")
-
                 count = 0
                 for link in links:
                     if limit > 0 and count >= limit:
                         break
-
+                    
                     href = link.get('href', '')
-                    if not href:
+                    if href.startswith('/'):
+                        full_url = f"https://www.sfonds200.be{href}"
+                    elif href.startswith('http'):
+                        full_url = href
+                    else:
                         continue
                     
-                    # Build full URL
-                    if href.startswith('http'):
-                        full_url = href
-                    elif href.startswith('/'):
-                        domain = base_url.split('/')[0] + '//' + base_url.split('/')[2]
-                        full_url = domain + href
-                    else:
-                        full_url = base_url.rstrip('/') + '/' + href
-
-                    # Download and process
                     try:
                         self.polite_sleep()
                         pdf_resp = requests.get(full_url, headers=self.headers, timeout=30)
                         if pdf_resp.status_code == 200 and len(pdf_resp.content) > 1000:
-                            # Check duplication via content hash
                             content_hash = self.get_document_hash(pdf_resp.content)
                             if self.is_in_db(content_hash):
-                                logger.info(f"Skipping duplicate: {full_url[:60]}...")
                                 self.stats["skipped"] += 1
                                 continue
                             
@@ -357,78 +472,78 @@ Text (first 6000 chars):
                                 if self.save_to_supabase(text, full_url, "PC 200"):
                                     scraped_urls.append(full_url)
                                     count += 1
-                                    logger.info(f"Processed new PC 200 doc: {full_url[:60]}...")
                     except Exception as e:
-                        logger.warning(f"Failed to process {full_url}: {e}")
+                        logger.warning(f"Fallback PDF error: {e}")
                         self.stats["errors"] += 1
-                
-                # If we found documents, stop trying other sources
-                if scraped_urls:
-                    break
-
-            except Exception as e:
-                logger.warning(f"Error with {base_url}: {e}")
+                        
+        except Exception as e:
+            logger.warning(f"Fallback failed: {e}")
         
         return scraped_urls
 
-    # --- CNT/NAR Scraper ---
+    # --- CNT/NAR Scraper (2-Step Crawler Walk) ---
     
     def fetch_cnt_nar_updates(self, limit: int = 0) -> List[str]:
         """
-        ✅ FIXED: Bypasses CNT Firewall by using Federal Database Mirror.
-        Stable Mirror URL: https://werk.belgie.be/nl/themas/paritaire-comites/nationale-arbeidsraad/cao-nar
+        2-Step Crawler for CNT/NAR via Federal Mirror (FOD Werk).
+        Bypasses cnt-nar.be firewall by using government mirror.
+        
+        Target: https://werk.belgie.be/nl/themas/paritaire-comites/nationale-arbeidsraad
         """
-        logger.info("=== Scraping CNT/NAR via Federal Mirror ===")
-        url = "https://werk.belgie.be/nl/themas/paritaire-comites/nationale-arbeidsraad/cao-nar"
+        logger.info("=== Scraping CNT/NAR via 2-Step Federal Mirror ===")
+        
+        index_url = "https://werk.belgie.be/nl/themas/paritaire-comites/nationale-arbeidsraad"
         scraped_urls = []
-
+        
         try:
-            response = requests.get(url, headers=self.headers, timeout=20)
-            if response.status_code != 200:
-                logger.warning(f"CNT Mirror returned {response.status_code}")
+            logger.info(f"Fetching CNT index: {index_url}")
+            resp = requests.get(index_url, headers=self.headers, timeout=20)
+            if resp.status_code != 200:
+                logger.warning(f"CNT index returned {resp.status_code}")
                 return scraped_urls
-
-            soup = BeautifulSoup(response.content, 'html.parser')
-            links = soup.select('div.main-content a[href$=".pdf"]')
-            # Fallback: if no links found with that selector, try all PDF links
-            if not links:
-                links = soup.find_all('a', href=lambda h: h and h.endswith('.pdf'))
-
+            
+            soup = BeautifulSoup(resp.content, 'html.parser')
+            
+            # Find links containing "cao" or "advies" keywords
+            all_links = soup.find_all('a', href=True)
+            content_links = []
+            
+            for link in all_links:
+                href = link.get('href', '')
+                text = link.get_text(strip=True).lower()
+                
+                # Look for CAO/regulation related links
+                if any(kw in href.lower() or kw in text for kw in ['cao', 'advies', 'collectieve', 'arbeidsovereenkomst']):
+                    if '/nl/' in href and 'mailto:' not in href:
+                        if href.startswith('/'):
+                            full_url = f"https://werk.belgie.be{href}"
+                        elif href.startswith('http'):
+                            full_url = href
+                        else:
+                            continue
+                        if full_url not in content_links:
+                            content_links.append(full_url)
+            
+            logger.info(f"Found {len(content_links)} CNT content links")
+            
+            # Process first N links
+            max_links = min(10, len(content_links)) if limit == 0 else min(limit, len(content_links))
             count = 0
-            for link in links:
+            
+            for link_url in content_links[:max_links]:
                 if limit > 0 and count >= limit:
                     break
-
-                href = link.get('href', '')
-                if not href:
-                    continue
-                    
-                full_url = f"https://werk.belgie.be{href}" if href.startswith('/') else href
-
-                # Download and process
+                
                 try:
-                    self.polite_sleep()
-                    pdf_resp = requests.get(full_url, headers=self.headers, timeout=30)
-                    if pdf_resp.status_code == 200 and len(pdf_resp.content) > 1000:
-                        # Check duplication via content hash
-                        content_hash = self.get_document_hash(pdf_resp.content)
-                        if self.is_in_db(content_hash):
-                            logger.info(f"Skipping duplicate: {full_url[:60]}...")
-                            self.stats["skipped"] += 1
-                            continue
-                        
-                        text, method = self.extract_text_from_pdf(pdf_resp.content)
-                        if text and len(text) > 100:
-                            if self.save_to_supabase(text, full_url, "CNT/NAR"):
-                                scraped_urls.append(full_url)
-                                count += 1
-                                logger.info(f"Processed new CNT doc: {full_url[:60]}...")
+                    if self.extract_content_from_page(link_url, "CNT/NAR"):
+                        scraped_urls.append(link_url)
+                        count += 1
                 except Exception as e:
-                    logger.warning(f"Failed to process {full_url}: {e}")
+                    logger.warning(f"Error processing {link_url[:50]}...: {e}")
                     self.stats["errors"] += 1
-
+            
         except Exception as e:
-            logger.error(f"CNT Scraping failed: {e}")
+            logger.error(f"CNT crawl failed: {e}")
             self.stats["errors"] += 1
         
         return scraped_urls
