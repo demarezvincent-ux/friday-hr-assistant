@@ -89,10 +89,10 @@ Government websites are notorious for changing URLs. If the scraper finds 0 docu
     This means the URL in `legal_scraper.py` is dead.
 
 2.  **Fixing a Broken URL**:
-    - Build: Go to the website (e.g., [sfonds200.be](https://www.sfonds200.be)) in your browser.
-    - Find the page with the PDF links.
-    - Copy the URL.
-    - Edit `scripts/legal_scraper.py` and update the `search_urls` list in the relevant function (e.g., `fetch_pc_200_updates`).
+    - **PC 200**: The scraper now targets `https://www.sfonds200.be/nl/` (Homepage) because deep links change frequently. If this fails, visit the site and update `start_urls` in `fetch_pc_200_updates`.
+    - **CNT**: Targets `https://cnt-nar.be/nl`. Deep linking is difficult due to redirects.
+    - Copy the new URL.
+    - Edit `scripts/legal_scraper.py`.
 
 3.  **DNS Errors**:
     - Ensure your machine has internet access.
