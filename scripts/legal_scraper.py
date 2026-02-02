@@ -90,9 +90,11 @@ class BelgianLegalScraper:
 
     # --- Utility Methods ---
     
-    def get_document_hash(self, text: str) -> str:
-        """Create MD5 fingerprint for deduplication."""
-        return hashlib.md5(text.encode('utf-8')).hexdigest()
+    def get_document_hash(self, content) -> str:
+        """Create MD5 fingerprint for deduplication. Accepts bytes or string."""
+        if isinstance(content, bytes):
+            return hashlib.md5(content).hexdigest()
+        return hashlib.md5(content.encode('utf-8')).hexdigest()
 
     def is_in_db(self, content_hash: str) -> bool:
         """Check if document already exists in database."""
@@ -289,68 +291,83 @@ Text (first 6000 chars):
     
     def fetch_pc_200_updates(self, limit: int = 0) -> List[str]:
         """
-        FIXED: Uses the official FOD Werk API instead of the fragile Sfonds site.
-        Target: PC 200 (Joint Committee 200)
+        Scrapes PC 200 from multiple sources with fallbacks.
+        Primary: sfonds200.be homepage (WORKS)
+        Fallback: werk.belgie.be (structure changes frequently)
         """
-        logger.info("=== Scraping PC 200 via Official Government DB ===")
+        logger.info("=== Scraping PC 200 via Multiple Sources ===")
         
+        # These URLs have been tested - homepage approach works best
         start_urls = [
-            "https://www.sfonds200.be/nl/documenten",
-            "https://www.sfonds200.be/nl/sectorale-informatie/cao", 
-            "https://www.sfonds200.be/nl/"
+            "https://www.sfonds200.be/nl/",  # WORKS - Found PDFs here
+            "https://werk.belgie.be/nl/themas/paritaire-comites"  # Fallback - list page
         ]
         scraped_urls = []
-        
-        for start_url in start_urls:
+
+        for base_url in start_urls:
             try:
-                logger.info(f"Trying to scrape: {start_url}")
-                response = requests.get(start_url, headers=self.headers, timeout=15)
+                logger.info(f"Trying: {base_url}")
+                response = requests.get(base_url, headers=self.headers, timeout=20)
                 if response.status_code != 200:
-                    logger.warning(f"Failed to fetch {start_url}: {response.status_code}")
+                    logger.warning(f"PC 200: {base_url} returned {response.status_code}")
+                    continue
+
+                soup = BeautifulSoup(response.content, 'html.parser')
+                # Find all PDF links
+                links = soup.find_all('a', href=lambda h: h and h.endswith('.pdf'))
+                
+                if not links:
+                    logger.info(f"No PDFs found at {base_url}")
                     continue
                 
-                soup = BeautifulSoup(response.content, 'html.parser')
-            
-                # Find all PDF links
-                links = soup.find_all('a', href=True)
+                logger.info(f"Found {len(links)} PDF links at {base_url}")
+
                 count = 0
-                
                 for link in links:
                     if limit > 0 and count >= limit:
                         break
-                        
-                    href = link['href']
-                    if href.endswith('.pdf'):
-                        # Handle relative URLs
-                        if href.startswith('/'):
-                            full_url = f"https://www.sfonds200.be{href}"
-                        elif href.startswith('http'):
-                            full_url = href
-                        else:
-                            # Handle relative without leading slash if base url has no trailing slash
-                            full_url = f"{start_url.rstrip('/')}/{href}"
-                        
-                        # Deduplication (Check content hash first would be better, but user asked for URL hash)
-                        # We'll rely on our existing is_in_db which checks content_hash AFTER download.
-                        # Use existing processing logic:
-                        
-                        try:
-                            self.polite_sleep()
-                            pdf_resp = requests.get(full_url, headers=self.headers, timeout=30)
-                            if pdf_resp.status_code == 200 and len(pdf_resp.content) > 1000:
-                                text, method = self.extract_text_from_pdf(pdf_resp.content)
-                                if text and len(text) > 100:
-                                    if self.save_to_supabase(text, full_url, "PC 200"):
-                                        scraped_urls.append(full_url)
-                                        count += 1
-                                        logger.info(f"Processed new doc: {full_url}")
-                        except Exception as e:
-                            logger.warning(f"Failed to process {full_url}: {e}")
-                            self.stats["errors"] += 1
+
+                    href = link.get('href', '')
+                    if not href:
+                        continue
+                    
+                    # Build full URL
+                    if href.startswith('http'):
+                        full_url = href
+                    elif href.startswith('/'):
+                        domain = base_url.split('/')[0] + '//' + base_url.split('/')[2]
+                        full_url = domain + href
+                    else:
+                        full_url = base_url.rstrip('/') + '/' + href
+
+                    # Download and process
+                    try:
+                        self.polite_sleep()
+                        pdf_resp = requests.get(full_url, headers=self.headers, timeout=30)
+                        if pdf_resp.status_code == 200 and len(pdf_resp.content) > 1000:
+                            # Check duplication via content hash
+                            content_hash = self.get_document_hash(pdf_resp.content)
+                            if self.is_in_db(content_hash):
+                                logger.info(f"Skipping duplicate: {full_url[:60]}...")
+                                self.stats["skipped"] += 1
+                                continue
                             
+                            text, method = self.extract_text_from_pdf(pdf_resp.content)
+                            if text and len(text) > 100:
+                                if self.save_to_supabase(text, full_url, "PC 200"):
+                                    scraped_urls.append(full_url)
+                                    count += 1
+                                    logger.info(f"Processed new PC 200 doc: {full_url[:60]}...")
+                    except Exception as e:
+                        logger.warning(f"Failed to process {full_url}: {e}")
+                        self.stats["errors"] += 1
+                
+                # If we found documents, stop trying other sources
+                if scraped_urls:
+                    break
+
             except Exception as e:
-                logger.warning(f"Error checking {start_url}: {e}")
-            self.stats["errors"] += 1
+                logger.warning(f"Error with {base_url}: {e}")
         
         return scraped_urls
 
@@ -358,60 +375,61 @@ Text (first 6000 chars):
     
     def fetch_cnt_nar_updates(self, limit: int = 0) -> List[str]:
         """
-        Scrape CNT/NAR national CAOs.
-        Target: https://cnt-nar.be/nl (Official site)
+        ✅ FIXED: Bypasses CNT Firewall by using Federal Database Mirror.
+        Stable Mirror URL: https://werk.belgie.be/nl/themas/paritaire-comites/nationale-arbeidsraad/cao-nar
         """
-        logger.info("=== Scraping CNT/NAR CAOs ===")
-        
-        # Use no-www to avoid weird redirects, and try landing pages
-        start_urls = [
-            "https://cnt-nar.be/nl/werken-aan/caos", 
-            "https://cnt-nar.be/nl/regelgeving",
-            "https://cnt-nar.be/nl"
-        ]
-        
+        logger.info("=== Scraping CNT/NAR via Federal Mirror ===")
+        url = "https://werk.belgie.be/nl/themas/paritaire-comites/nationale-arbeidsraad/cao-nar"
         scraped_urls = []
-        
-        for search_url in start_urls:
-            try:
-                resp = requests.get(search_url, headers=self.headers, timeout=15)
-                if resp.status_code != 200:
-                    logger.warning(f"CNT: Failed to fetch {search_url}: {resp.status_code}")
+
+        try:
+            response = requests.get(url, headers=self.headers, timeout=20)
+            if response.status_code != 200:
+                logger.warning(f"CNT Mirror returned {response.status_code}")
+                return scraped_urls
+
+            soup = BeautifulSoup(response.content, 'html.parser')
+            links = soup.select('div.main-content a[href$=".pdf"]')
+            # Fallback: if no links found with that selector, try all PDF links
+            if not links:
+                links = soup.find_all('a', href=lambda h: h and h.endswith('.pdf'))
+
+            count = 0
+            for link in links:
+                if limit > 0 and count >= limit:
+                    break
+
+                href = link.get('href', '')
+                if not href:
                     continue
                     
-                soup = BeautifulSoup(resp.text, 'html.parser')
-            
-                # Find table rows with CAO links
-                pdf_links = []
-                for row in soup.find_all('tr'):
-                    for link in row.find_all('a', href=True):
-                        href = link['href']
-                        if '.pdf' in href.lower():
-                            full_url = href if href.startswith('http') else f"{base_url.rstrip('/')}/{href.lstrip('/')}"
-                            pdf_links.append(full_url)
-                
-                logger.info(f"Found {len(pdf_links)} CNT/NAR documents")
-                
-                if limit > 0:
-                    pdf_links = pdf_links[:limit]
-                
-                for pdf_url in pdf_links:
+                full_url = f"https://werk.belgie.be{href}" if href.startswith('/') else href
+
+                # Download and process
+                try:
                     self.polite_sleep()
-                    self.stats["scraped"] += 1
-                    
-                    try:
-                        pdf_resp = requests.get(pdf_url, headers=self.headers, timeout=30)
-                        if pdf_resp.status_code == 200 and len(pdf_resp.content) > 1000:
-                            text, method = self.extract_text_from_pdf(pdf_resp.content)
-                            if text and len(text) > 100:
-                                self.save_to_supabase(text, pdf_url, "CNT_NAR")
-                                scraped_urls.append(pdf_url)
-                    except Exception as e:
-                        logger.warning(f"Failed to process {pdf_url}: {e}")
-                        self.stats["errors"] += 1
-        
-            except Exception as e:
-                logger.error(f"CNT/NAR scraping failed for {search_url}: {e}")
+                    pdf_resp = requests.get(full_url, headers=self.headers, timeout=30)
+                    if pdf_resp.status_code == 200 and len(pdf_resp.content) > 1000:
+                        # Check duplication via content hash
+                        content_hash = self.get_document_hash(pdf_resp.content)
+                        if self.is_in_db(content_hash):
+                            logger.info(f"Skipping duplicate: {full_url[:60]}...")
+                            self.stats["skipped"] += 1
+                            continue
+                        
+                        text, method = self.extract_text_from_pdf(pdf_resp.content)
+                        if text and len(text) > 100:
+                            if self.save_to_supabase(text, full_url, "CNT/NAR"):
+                                scraped_urls.append(full_url)
+                                count += 1
+                                logger.info(f"Processed new CNT doc: {full_url[:60]}...")
+                except Exception as e:
+                    logger.warning(f"Failed to process {full_url}: {e}")
+                    self.stats["errors"] += 1
+
+        except Exception as e:
+            logger.error(f"CNT Scraping failed: {e}")
+            self.stats["errors"] += 1
         
         return scraped_urls
 
