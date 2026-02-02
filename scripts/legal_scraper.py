@@ -528,8 +528,9 @@ def main():
         scraper = BelgianLegalScraper(dry_run=args.dry_run)
         stats = scraper.run(target=args.target, limit=args.limit)
         
-        # Exit with error if we had failures
-        if stats["errors"] > 0 and stats["new"] == 0:
+        # Exit with error ONLY if we had failures AND no success at all
+        # Success = new documents OR correctly skipped duplicates
+        if stats["errors"] > 0 and (stats["new"] + stats["skipped"]) == 0:
             sys.exit(1)
         
     except Exception as e:
