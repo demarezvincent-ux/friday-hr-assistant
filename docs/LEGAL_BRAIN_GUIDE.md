@@ -16,7 +16,9 @@ graph TD
     Scraper -->|1. Fetch| Web[Government Sites]
     Web -->|PC 200| Scraper
     Web -->|CNT/NAR| Scraper
-    Web -->|Federal Law| Scraper
+    Web -->|Federal Gazette| Scraper
+    Web -->|FPS Employment News| Scraper
+    Web -->|Social Security News| Scraper
     
     Scraper -->|2. Extract| Text[PDF Text / OCR]
     
@@ -30,7 +32,7 @@ graph TD
 ```
 
 ### Components
-1.  **Scraper (`scripts/legal_scraper.py`)**: The engine. It visits sites, downloads PDFs, extracts text (with OCR fallback), analyzes content using AI, and saves it.
+1.  **Scraper (`scripts/legal_scraper.py`)**: The engine. It visits sites, downloads PDFs, extracts text (with OCR fallback), analyzes content using AI, and saves it. Now features a **2-Step Crawler** and **News Feed** integration to catch 2026 reforms.
 2.  **Database (`legal_knowledge` table)**: Specialized table in Supabase with vector embeddings for semantic search.
 3.  **RAG Controller**: When you ask a legal question, FRIDAY now searches *this* database alongside your company docs.
 
@@ -69,10 +71,12 @@ Prerequisite: `pip install -r scripts/legal_requirements.txt`
 # 1. Test configuration (Dry run - no storage)
 python3 scripts/legal_scraper.py --target federal --dry-run
 
-# 2. Run PC 200 scraper (limit to 5 recent docs)
-python3 scripts/legal_scraper.py --target pc200 --limit 5
+# 2. Run specific news targets
+python3 scripts/legal_scraper.py --target fps --limit 3
+python3 scripts/legal_scraper.py --target gazette --limit 3
+python3 scripts/legal_scraper.py --target socialsecurity --limit 3
 
-# 3. Run everything
+# 3. Run everything (New & Legacy targets)
 python3 scripts/legal_scraper.py --target all
 ```
 
