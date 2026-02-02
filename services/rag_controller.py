@@ -18,6 +18,64 @@ from services.agentic.cache import SemanticCache, is_cache_available
 logger = logging.getLogger(__name__)
 
 
+async def search_legal_knowledge(
+    query: str,
+    query_embedding: List[float],
+    supabase: Client,
+    fts_string: str = "",
+    source_filter: Optional[str] = None,
+    match_count: int = 5
+) -> Tuple[str, List[str]]:
+    """
+    Search the legal_knowledge table for Belgian labor law.
+    Returns context string and list of sources.
+    """
+    try:
+        rpc_params = {
+            "query_embedding": query_embedding,
+            "text_search_query": fts_string or query.lower(),
+            "match_threshold": 0.15,
+            "match_count": match_count,
+            "source_filter": source_filter
+        }
+        
+        result = supabase.rpc("match_legal_documents", rpc_params).execute()
+        
+        if not result.data:
+            logger.info("Legal search: No matches found")
+            return "", []
+        
+        context_parts = []
+        sources = []
+        
+        for doc in result.data:
+            source = doc.get("metadata", {}).get("source", "Legal")
+            topic = doc.get("metadata", {}).get("topic", "")
+            effective_date = doc.get("metadata", {}).get("effective_date", "")
+            
+            header = f"-- LEGAL SOURCE: {source}"
+            if topic:
+                header += f" ({topic})"
+            if effective_date:
+                header += f" [Effective: {effective_date}]"
+            header += " --"
+            
+            # Prefer summary if available, otherwise use content snippet
+            content = doc.get("summary") or doc.get("content", "")[:1500]
+            context_parts.append(f"{header}\n{content}")
+            
+            source_label = f"{source} - {topic}" if topic else source
+            if source_label not in sources:
+                sources.append(source_label)
+        
+        logger.info(f"Legal search: Found {len(result.data)} docs from {len(sources)} sources")
+        return "\n\n".join(context_parts), sources
+        
+    except Exception as e:
+        logger.warning(f"Legal knowledge search failed: {e}")
+        return "", []
+
+
 def diversify_by_source(candidates: List[dict], max_per_source: int = 5) -> List[dict]:
     """
     Limit the number of chunks per source document to ensure result diversity.
@@ -121,6 +179,11 @@ async def get_context_with_strategy(
             context = format_web_results_as_context(web_results)
             sources = [f"Web: {r['title'][:30]}..." for r in web_results]
             return context, sources
+    
+    # =========================================================================
+    # STEP 0c: For LEGAL intent, we'll search BOTH legal_knowledge AND company docs
+    # =========================================================================
+    is_legal_query = (intent == QueryIntent.LEGAL)
 
     # =========================================================================
     # STEP 1: Intelligence Engine - Query Analysis
@@ -259,6 +322,26 @@ async def get_context_with_strategy(
             sources.append(filename)
 
     context_str = "\n\n".join(context_parts)
+    
+    # =========================================================================
+    # STEP 5b: Legal Knowledge Search (for LEGAL intent queries)
+    # =========================================================================
+    if is_legal_query:
+        try:
+            legal_context, legal_sources = await search_legal_knowledge(
+                query=corrected_query,
+                query_embedding=query_embedding,
+                supabase=supabase,
+                fts_string=fts_string,
+                match_count=5
+            )
+            if legal_context:
+                # Prepend legal context (prioritize law over company policy)
+                context_str = f"=== BELGIAN LABOR LAW ===\n{legal_context}\n\n=== COMPANY POLICY ===\n{context_str}"
+                sources = legal_sources + sources  # Legal sources first
+                logger.info(f"Orchestrator: Added legal context from {len(legal_sources)} sources")
+        except Exception as e:
+            logger.warning(f"Legal knowledge search failed (non-critical): {e}")
     
     # =========================================================================
     # STEP 6: Form Discovery & Proactive Linking (Option B)

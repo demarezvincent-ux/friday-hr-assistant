@@ -1,0 +1,64 @@
+name: Weekly Legal Brain Transplant
+
+on:
+  schedule:
+    # Every Friday at 23:00 UTC (midnight CET)
+    - cron: '0 23 * * 5'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Which sources to scrape'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - pc200
+          - cnt
+          - federal
+      limit:
+        description: 'Max documents per source (0=unlimited)'
+        required: false
+        default: '0'
+        type: string
+
+jobs:
+  scrape-and-embed:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'scripts/legal_requirements.txt'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r scripts/legal_requirements.txt
+
+      - name: Run Legal Scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          HF_API_KEY: ${{ secrets.HF_API_KEY }}
+        run: |
+          python scripts/legal_scraper.py \
+            --target ${{ github.event.inputs.target || 'all' }} \
+            --limit ${{ github.event.inputs.limit || '0' }}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## 🏛️ Legal Brain Update Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target:** ${{ github.event.inputs.target || 'all' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Limit:** ${{ github.event.inputs.limit || 'unlimited' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check the job logs for detailed scraping statistics." >> $GITHUB_STEP_SUMMARY

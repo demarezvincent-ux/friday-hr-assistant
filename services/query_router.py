@@ -9,6 +9,7 @@ class QueryIntent(Enum):
     CHITCHAT = "chitchat"
     DATABASE = "database"
     WEB = "web"
+    LEGAL = "legal"
 
 class QueryRouter:
     """
@@ -33,6 +34,18 @@ class QueryRouter:
             r"\b(who is the|what is the current|search the web for)\b",
             r"\b(2024|2025|2026)\b"  # Future or current years often imply web search
         ]
+        
+        # Patterns for legal/labor law intent (Belgian context)
+        self.legal_patterns = [
+            r"\b(cao|cct|pc\s*\d+|paritair\s*comit[eé])\b",
+            r"\b(arbeidsrecht|arbeidswet|arbeidsovereenkomst)\b",
+            r"\b(ontslag|opzeg|opzegtermijn|dismissal)\b",
+            r"\b(loon|salaris|indexatie|indexering|wage|salary)\b",
+            r"\b(vakantie|verlof|leave|holiday|recuperatie)\b",
+            r"\b(cnt|nar|nationale\s*arbeidsraad)\b",
+            r"\b(collective\s*agreement|labor\s*law|employment\s*law)\b",
+            r"\b(wet\s+betreffende|koninklijk\s+besluit|kb)\b"
+        ]
 
     def classify(self, query: str) -> Tuple[QueryIntent, float]:
         """
@@ -51,7 +64,12 @@ class QueryRouter:
             if re.search(pattern, clean_query):
                 return QueryIntent.WEB, 0.8
         
-        # 3. Default to Database Search
+        # 3. Check Legal (Belgian labor law terms)
+        for pattern in self.legal_patterns:
+            if re.search(pattern, clean_query):
+                return QueryIntent.LEGAL, 0.85
+        
+        # 4. Default to Database Search
         # If the query is long or contains complex nouns, it's likely a DB search
         if len(clean_query.split()) > 3:
             return QueryIntent.DATABASE, 0.7
