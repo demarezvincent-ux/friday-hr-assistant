@@ -44,7 +44,20 @@ class QueryRouter:
             r"\b(vakantie|verlof|leave|holiday|recuperatie)\b",
             r"\b(cnt|nar|nationale\s*arbeidsraad)\b",
             r"\b(collective\s*agreement|labor\s*law|employment\s*law)\b",
-            r"\b(wet\s+betreffende|koninklijk\s+besluit|kb)\b"
+            r"\b(wet\s+betreffende|koninklijk\s+besluit|kb)\b",
+            # Article-level patterns for Belgian law citations
+            r"\b(art\.?\s*\d+|artikel\s*\d+)\b",
+            r"\b(arbeidsovereenkomstenwet|welzijnswet|loonbeschermingswet)\b",
+            r"\b(feestdagenwet|vakantiewet|cao.?wet)\b",
+            # Generic Dutch/French legal terms - CRITICAL for catching "wat zegt de wet"
+            r"\b(wet|wetgeving|wettelijk|wetboek)\b",
+            r"\b(recht|rechten|rechtspositie)\b",
+            r"\b(loi|légal|législation|droit)\b",
+            r"\b(wettelijk\s+kader|legal\s+framework)\b",
+            r"\b(zegt\s+de\s+wet|selon\s+la\s+loi|according\s+to\s+law)\b",
+            # English legal terms
+            r"\b(law|laws|legal|legally|legislation)\b",
+            r"\b(statutory|statute|regulation|regulations)\b"
         ]
 
     def classify(self, query: str) -> Tuple[QueryIntent, float]:
