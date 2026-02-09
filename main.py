@@ -779,7 +779,15 @@ CRITICAL RULES:
 5. FORMS & DOWNLOADS:
    - If the context contains a "RECOMMENDED FORMS" section with links, you MUST mention them.
    - Example: "You can download the form here: [link]."
-   - Only recommend forms that are explicitly listed in the context."""
+   - Only recommend forms that are explicitly listed in the context.
+
+6. LEGAL CITATIONS (MANDATORY):
+   - When ANY Belgian law article is used from the context, you MUST cite it with BOTH the article number AND law name.
+   - Format: "Conform Art. [nummer] van de [wetnaam] ([datum]): ..."
+   - Example: "Conform Art. 38 van de Arbeidsovereenkomstenwet (1978-07-03): De werknemer heeft recht op..."
+   - If the law directly answers the question, QUOTE the relevant text.
+   - NEVER use legal information without proper citation.
+   - When multiple articles are relevant, cite ALL of them."""
     
     messages = [{"role": "system", "content": system_prompt}]
     for msg in history[-4:]: messages.append({"role": msg["role"], "content": msg["content"]})

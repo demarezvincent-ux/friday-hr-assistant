@@ -67,21 +67,41 @@ async def search_legal_knowledge(
         
         for doc in result.data:
             source = doc.get("metadata", {}).get("source", "Legal")
-            topic = doc.get("metadata", {}).get("topic", "")
-            effective_date = doc.get("metadata", {}).get("effective_date", "")
             
-            header = f"-- LEGAL SOURCE: {source}"
-            if topic:
-                header += f" ({topic})"
-            if effective_date:
-                header += f" [Effective: {effective_date}]"
-            header += " --"
+            # Article-aware header for Belgian law articles
+            if source == "BELGIAN_LAW":
+                law_name = doc.get("metadata", {}).get("law_name", "")
+                law_date = doc.get("metadata", {}).get("law_date", "")
+                article_number = doc.get("metadata", {}).get("article_number", "")
+                title = doc.get("metadata", {}).get("title", "")
+                chapter = doc.get("metadata", {}).get("chapter", "")
+                
+                header = f"-- {article_number} {law_name} ({law_date}) --"
+                if title or chapter:
+                    hierarchy_parts = [p for p in [title, chapter] if p]
+                    header += f"\n{' > '.join(hierarchy_parts)}"
+                
+                # Use full content for law articles (not truncated)
+                content = doc.get("content", "")
+                source_label = f"{article_number} {law_name}"
+            else:
+                # Existing logic for other legal sources
+                topic = doc.get("metadata", {}).get("topic", "")
+                effective_date = doc.get("metadata", {}).get("effective_date", "")
+                
+                header = f"-- LEGAL SOURCE: {source}"
+                if topic:
+                    header += f" ({topic})"
+                if effective_date:
+                    header += f" [Effective: {effective_date}]"
+                header += " --"
+                
+                # Prefer summary if available, otherwise use content snippet
+                content = doc.get("summary") or doc.get("content", "")[:1500]
+                source_label = f"{source} - {topic}" if topic else source
             
-            # Prefer summary if available, otherwise use content snippet
-            content = doc.get("summary") or doc.get("content", "")[:1500]
             context_parts.append(f"{header}\n{content}")
             
-            source_label = f"{source} - {topic}" if topic else source
             if source_label not in sources:
                 sources.append(source_label)
         
@@ -198,9 +218,10 @@ async def get_context_with_strategy(
             return context, sources
     
     # =========================================================================
-    # STEP 0c: For LEGAL intent, we'll search BOTH legal_knowledge AND company docs
+    # STEP 0c: For LEGAL or DATABASE intent, we'll search BOTH legal_knowledge AND company docs
+    # Rationale: Most HR questions have Belgian labor law implications, even if not explicitly stated
     # =========================================================================
-    is_legal_query = (intent == QueryIntent.LEGAL)
+    is_legal_query = (intent == QueryIntent.LEGAL or intent == QueryIntent.DATABASE)
 
     # =========================================================================
     # STEP 1: Intelligence Engine - Query Analysis
