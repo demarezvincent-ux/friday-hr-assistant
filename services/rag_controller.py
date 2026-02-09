@@ -76,7 +76,7 @@ async def search_legal_knowledge(
                 title = doc.get("metadata", {}).get("title", "")
                 chapter = doc.get("metadata", {}).get("chapter", "")
                 
-                header = f"-- {article_number} {law_name} ({law_date}) --"
+                header = f"--- [CITE THIS: {article_number} van de {law_name} ({law_date})] ---"
                 if title or chapter:
                     hierarchy_parts = [p for p in [title, chapter] if p]
                     header += f"\n{' > '.join(hierarchy_parts)}"

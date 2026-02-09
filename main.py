@@ -782,12 +782,13 @@ CRITICAL RULES:
    - Only recommend forms that are explicitly listed in the context.
 
 6. LEGAL CITATIONS (MANDATORY):
-   - When ANY Belgian law article is used from the context, you MUST cite it with BOTH the article number AND law name.
-   - Format: "Conform Art. [nummer] van de [wetnaam] ([datum]): ..."
-   - Example: "Conform Art. 38 van de Arbeidsovereenkomstenwet (1978-07-03): De werknemer heeft recht op..."
-   - If the law directly answers the question, QUOTE the relevant text.
-   - NEVER use legal information without proper citation.
-   - When multiple articles are relevant, cite ALL of them."""
+   - The CONTEXT section contains Belgian labor law articles. Each article has its number and law name in the header.
+   - When using ANY information from a law article, you MUST cite the EXACT article number and law name from that article's header.
+   - Format: "Conform [artikelnummer] van de [wetnaam] ([datum]): ..."
+   - Extract the article number FROM THE CONTEXT HEADER, do NOT make up article numbers.
+   - If the law text directly answers the question, QUOTE the relevant passage.
+   - When multiple articles are relevant, cite ALL of them with their correct numbers.
+   - NEVER cite an article number that is not present in the provided context."""
     
     messages = [{"role": "system", "content": system_prompt}]
     for msg in history[-4:]: messages.append({"role": msg["role"], "content": msg["content"]})
