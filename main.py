@@ -874,11 +874,21 @@ def save_message(chat_id, role, content, company_id, sources=None):
             logger.error(f"Sources not JSON-serializable: {e}, sources={sources_data}")
             sources_data = {}
         
+        # CRITICAL FIX: The DB `sources` column is typed as a JSON array.
+        # Wrap the dict in a list so Postgres accepts it as a valid JSON array.
+        # Format: [{"legal_sources": [...], "company_sources": [...]}]
+        if isinstance(sources_data, dict):
+            sources_for_db = [sources_data]
+        elif isinstance(sources_data, list):
+            sources_for_db = sources_data
+        else:
+            sources_for_db = []
+        
         supabase.table("messages").insert({
             "chat_id": chat_id, 
             "role": role, 
             "content": content, 
-            "sources": sources_data, 
+            "sources": sources_for_db, 
             "company_id": company_id 
         }).execute()
         logger.info(f"Successfully saved {role} message to chat {chat_id}")
