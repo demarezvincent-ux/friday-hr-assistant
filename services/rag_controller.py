@@ -169,7 +169,7 @@ async def get_context_with_strategy(
     match_count: int = 200,
     top_k: int = 10,
     use_cache: bool = True
-) -> Tuple[str, List[str]]:
+) -> Tuple[str, dict]:
     """
     Main RAG orchestrator with Layered Intelligence and Semantic Caching.
     
@@ -208,14 +208,14 @@ async def get_context_with_strategy(
     logger.info(f"Orchestrator: intent={intent.value} (conf={confidence:.2f})")
     
     if intent == QueryIntent.CHITCHAT:
-        return "", []
+        return "", {"legal_sources": [], "company_sources": []}
     
     if intent == QueryIntent.WEB:
         web_results = cached_web_search(raw_query, max_results=3)
         if web_results:
             context = format_web_results_as_context(web_results)
             sources = [f"Web: {r['title'][:30]}..." for r in web_results]
-            return context, sources
+            return context, {"legal_sources": [], "company_sources": sources}
     
     # =========================================================================
     # STEP 0c: For LEGAL or DATABASE intent, we'll search BOTH legal_knowledge AND company docs
@@ -249,11 +249,11 @@ async def get_context_with_strategy(
         vectors = get_embeddings_fn([corrected_query])
         if not vectors or not vectors[0]:
             logger.warning("Orchestrator: embedding generation failed")
-            return "", []
+            return "", {"legal_sources": [], "company_sources": []}
         query_embedding = vectors[0]
     except Exception as e:
         logger.error(f"Orchestrator: embedding error ({e})")
-        return "", []
+        return "", {"legal_sources": [], "company_sources": []}
 
     # =========================================================================
     # STEP 3: Hybrid Search (Vector + FTS) with High Recall
@@ -286,10 +286,10 @@ async def get_context_with_strategy(
         
     except Exception as e:
         logger.error(f"Orchestrator: database search failed ({e})")
-        return "", []
+        return "", {"legal_sources": [], "company_sources": []}
 
     if not candidates:
-        return "", []
+        return "", {"legal_sources": [], "company_sources": []}
 
     # =========================================================================
     # STEP 4: Diversify and Rerank Candidates
@@ -343,10 +343,11 @@ async def get_context_with_strategy(
 
 
     # =========================================================================
-    # STEP 5: Build Context String and Extract Sources
+    # STEP 5: Build Context String and Extract Sources (Company Docs)
     # =========================================================================
     context_parts = []
-    sources = []
+    company_sources = []
+    legal_sources = []
     
     for doc in reranked_docs:
         content = doc.get("content", "")
@@ -356,8 +357,8 @@ async def get_context_with_strategy(
         # Simplified header as requested
         context_parts.append(f"-- SOURCE: {filename} --\n{content}")
         
-        if filename not in sources:
-            sources.append(filename)
+        if filename not in company_sources:
+            company_sources.append(filename)
 
     context_str = "\n\n".join(context_parts)
     
@@ -366,7 +367,7 @@ async def get_context_with_strategy(
     # =========================================================================
     if is_legal_query:
         try:
-            legal_context, legal_sources = await search_legal_knowledge(
+            legal_context, legal_src = await search_legal_knowledge(
                 query=corrected_query,
                 query_embedding=query_embedding,
                 supabase=supabase,
@@ -376,7 +377,7 @@ async def get_context_with_strategy(
             if legal_context:
                 # Prepend legal context (prioritize law over company policy)
                 context_str = f"=== BELGIAN LABOR LAW ===\n{legal_context}\n\n=== COMPANY POLICY ===\n{context_str}"
-                sources = legal_sources + sources  # Legal sources first
+                legal_sources = legal_src
                 logger.info(f"Orchestrator: Added legal context from {len(legal_sources)} sources")
         except Exception as e:
             logger.warning(f"Legal knowledge search failed (non-critical): {e}")
@@ -395,9 +396,10 @@ async def get_context_with_strategy(
     except Exception as e:
         logger.warning(f"Form discovery failed (non-critical): {e}")
     
-    logger.info(f"Orchestrator: returning {len(reranked_docs)} docs from {len(sources)} sources")
+    all_count = len(legal_sources) + len(company_sources)
+    logger.info(f"Orchestrator: returning {len(reranked_docs)} docs from {all_count} sources (legal={len(legal_sources)}, company={len(company_sources)})")
     
-    return context_str, sources
+    return context_str, {"legal_sources": legal_sources, "company_sources": company_sources}
 
 
 async def get_relevant_forms(raw_query: str, corrected_query: str, context: str, company_id: str, supabase: Client) -> List[dict]:

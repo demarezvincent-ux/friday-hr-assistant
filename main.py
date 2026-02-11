@@ -247,8 +247,6 @@ st.markdown("""
     }
     
     .source-pill {
-        background: rgba(26, 60, 52, 0.06);
-        color: #1A3C34;
         padding: 6px 12px;
         border-radius: 16px;
         font-size: 12px;
@@ -257,6 +255,30 @@ st.markdown("""
         align-items: center;
         gap: 6px;
     }
+    
+    .legal-source-pill {
+        background-color: rgba(16, 124, 65, 0.10);
+        color: #0d6b3a;
+        border: 1px solid rgba(16, 124, 65, 0.18);
+    }
+    
+    .company-source-pill {
+        background-color: rgba(37, 99, 235, 0.08);
+        color: #1e40af;
+        border: 1px solid rgba(37, 99, 235, 0.15);
+    }
+    
+    .source-group-header {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 6px;
+        margin-top: 8px;
+    }
+    
+    .source-group-header.legal { color: #0d6b3a; }
+    .source-group-header.company { color: #1e40af; }
     
     .no-sources {
         font-size: 13px;
@@ -849,14 +871,22 @@ def get_dynamic_greeting():
     else: return "Hello."
 
 # --- SOURCE DISPLAY HELPER ---
-def render_sources_html(sources: list) -> str:
-    """Render sources in a smart, elegant way.
+def render_sources_html(sources) -> str:
+    """Render sources with dual-source distinction.
     
-    - No sources: Shows a subtle "No sources used" indicator
-    - Single source: Shows inline without collapse
-    - Multiple sources: Shows collapsible list
+    Accepts either:
+    - dict with legal_sources and company_sources (new format)
+    - list (legacy format from old saved messages)
     """
-    if not sources:
+    # Backward compat: convert flat list to dict
+    if isinstance(sources, list):
+        return _render_flat_sources(sources)
+    
+    legal = sources.get("legal_sources", [])
+    company = sources.get("company_sources", [])
+    total = len(legal) + len(company)
+    
+    if total == 0:
         return '''
         <div class="sources-section">
             <div class="no-sources">
@@ -866,25 +896,55 @@ def render_sources_html(sources: list) -> str:
         </div>
         '''
     
-    if len(sources) == 1:
-        return f'''
-        <div class="sources-section">
-            <div class="single-source">
-                <span>📄</span>
-                <span>Source: <span class="source-name">{sources[0]}</span></span>
-            </div>
-        </div>
+    # Build sections
+    legal_html = ""
+    if legal:
+        legal_pills = ''.join([f'<span class="source-pill legal-source-pill">⚖️ {s}</span>' for s in legal])
+        legal_html = f'''
+            <div class="source-group-header legal">Belgian Law</div>
+            <div class="sources-list">{legal_pills}</div>
         '''
     
-    # Multiple sources - collapsible
-    pills = ''.join([f'<span class="source-pill">📄 {src}</span>' for src in sources])
+    company_html = ""
+    if company:
+        company_pills = ''.join([f'<span class="source-pill company-source-pill">📄 {s}</span>' for s in company])
+        company_html = f'''
+            <div class="source-group-header company">Company Policy</div>
+            <div class="sources-list">{company_pills}</div>
+        '''
+    
+    if total == 1:
+        # Single source — no collapse
+        return f'<div class="sources-section">{legal_html}{company_html}</div>'
+    
     return f'''
     <div class="sources-section">
         <details>
-            <summary>{len(sources)} sources used</summary>
-            <div class="sources-list">
-                {pills}
+            <summary>{total} sources used</summary>
+            {legal_html}
+            {company_html}
+        </details>
+    </div>
+    '''
+
+
+def _render_flat_sources(sources: list) -> str:
+    """Legacy renderer for old messages stored as flat list."""
+    if not sources:
+        return '''
+        <div class="sources-section">
+            <div class="no-sources"><span>💭</span>
+                <span>This response was generated without referencing any documents</span>
             </div>
+        </div>
+        '''
+    pills = ''.join([f'<span class="source-pill company-source-pill">📄 {s}</span>' for s in sources])
+    if len(sources) == 1:
+        return f'<div class="sources-section"><div class="sources-list">{pills}</div></div>'
+    return f'''
+    <div class="sources-section">
+        <details><summary>{len(sources)} sources used</summary>
+            <div class="sources-list">{pills}</div>
         </details>
     </div>
     '''
@@ -958,7 +1018,7 @@ def handle_query(query):
         
         # Elite RAG Pipeline
         import asyncio
-        context, all_sources = asyncio.run(get_context_with_strategy(
+        context, source_dict = asyncio.run(get_context_with_strategy(
             raw_query=query,
             company_id=st.session_state.company_id,
             supabase=supabase,
@@ -970,19 +1030,20 @@ def handle_query(query):
         
         response = ask_groq(context, history, query)
         
-        # Use ALL retrieved sources for display (user always sees what was used)
-        display_sources = all_sources if all_sources else []
+        # source_dict = {"legal_sources": [...], "company_sources": [...]}
+        display_sources = source_dict if isinstance(source_dict, dict) else {"legal_sources": [], "company_sources": []}
         save_message(st.session_state.current_chat_id, "assistant", response, st.session_state.company_id, display_sources)
         msg_placeholder.empty()
         st.markdown(response)
         
-        # Smart source display - always show sources section
+        # Dual-source display
         st.markdown(render_sources_html(display_sources), unsafe_allow_html=True)
         
         # Confidence scoring (math-based, no extra API calls)
         from services.agentic.confidence import calculate_confidence, format_confidence_html
+        total_sources = len(display_sources.get("legal_sources", [])) + len(display_sources.get("company_sources", []))
         confidence = calculate_confidence(
-            sources_count=len(display_sources),
+            sources_count=total_sources,
             context_length=len(context) if context else 0,
             response_length=len(response) if response else 0
         )

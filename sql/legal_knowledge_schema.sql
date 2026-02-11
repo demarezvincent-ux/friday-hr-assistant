@@ -28,6 +28,12 @@ create index if not exists idx_legal_knowledge_hash
 create index if not exists idx_legal_knowledge_embedding 
   on legal_knowledge using ivfflat (embedding vector_cosine_ops) with (lists = 50);
 
+-- Indexes for article-level lookup
+create index if not exists idx_legal_knowledge_law_name
+  on legal_knowledge ((metadata->>'law_name'));
+create index if not exists idx_legal_knowledge_article
+  on legal_knowledge ((metadata->>'article_number'));
+
 -- Full-text search index
 create index if not exists idx_legal_knowledge_fts 
   on legal_knowledge using gin (to_tsvector('simple', content));
