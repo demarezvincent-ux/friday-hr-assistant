@@ -4,13 +4,22 @@ Tiered search (law > sector > company) with conflict detection.
 """
 
 import logging
+import re
 from typing import List, Dict, Tuple, Optional
 
 from supabase import Client
 
-from services.rag_controller import sanitize_fts_query
-
 logger = logging.getLogger(__name__)
+
+
+def sanitize_fts_query(query: str) -> str:
+    """
+    Sanitize search string for Postgres to_tsquery.
+    Removes special characters that cause syntax errors (like ' in CAO's).
+    """
+    sanitized = re.sub(r"['\"\(\)\[\]:&!|<>*]", " ", query)
+    terms = [t.strip() for t in sanitized.split() if len(t.strip()) > 2]
+    return " | ".join(terms[:10]) if terms else ""
 
 # Tier definitions
 TIER_LAW = 1
