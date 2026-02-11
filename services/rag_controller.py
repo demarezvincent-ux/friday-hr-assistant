@@ -15,6 +15,7 @@ from services.ranker_service import ResultReranker, rerank_with_huggingface
 from services.query_router import QueryRouter, QueryIntent
 from services.web_search import cached_web_search, format_web_results_as_context
 from services.agentic.cache import SemanticCache, is_cache_available
+from services.legal_hierarchy import search_by_tier, assemble_tiered_context
 
 logger = logging.getLogger(__name__)
 
@@ -363,24 +364,33 @@ async def get_context_with_strategy(
     context_str = "\n\n".join(context_parts)
     
     # =========================================================================
-    # STEP 5b: Legal Knowledge Search (for LEGAL intent queries)
+    # STEP 5b: Tiered Legal Knowledge Search (law > sector > company)
     # =========================================================================
+    law_sources = []
+    sector_sources = []
     if is_legal_query:
         try:
-            legal_context, legal_src = await search_legal_knowledge(
+            buckets = await search_by_tier(
                 query=corrected_query,
                 query_embedding=query_embedding,
                 supabase=supabase,
                 fts_string=fts_string,
-                match_count=5
+                match_count=10,
             )
-            if legal_context:
-                # Prepend legal context (prioritize law over company policy)
-                context_str = f"=== BELGIAN LABOR LAW ===\n{legal_context}\n\n=== COMPANY POLICY ===\n{context_str}"
-                legal_sources = legal_src
-                logger.info(f"Orchestrator: Added legal context from {len(legal_sources)} sources")
+            tiered_context, law_src, sector_src, company_legal_src = assemble_tiered_context(buckets)
+            if tiered_context:
+                # Prepend tiered legal context before company docs
+                context_str = f"{tiered_context}\n\n=== COMPANY DOCUMENTS ===\n{context_str}"
+                law_sources = law_src
+                sector_sources = sector_src
+                # Merge company-tier legal sources into legal_sources for backward compat
+                legal_sources = law_src + sector_src + company_legal_src
+                logger.info(
+                    f"Orchestrator: Added tiered legal context — "
+                    f"law={len(law_src)}, sector={len(sector_src)}, company_legal={len(company_legal_src)}"
+                )
         except Exception as e:
-            logger.warning(f"Legal knowledge search failed (non-critical): {e}")
+            logger.warning(f"Tiered legal search failed (non-critical): {e}")
     
     # =========================================================================
     # STEP 6: Form Discovery & Proactive Linking (Option B)
@@ -399,7 +409,12 @@ async def get_context_with_strategy(
     all_count = len(legal_sources) + len(company_sources)
     logger.info(f"Orchestrator: returning {len(reranked_docs)} docs from {all_count} sources (legal={len(legal_sources)}, company={len(company_sources)})")
     
-    return context_str, {"legal_sources": legal_sources, "company_sources": company_sources}
+    return context_str, {
+        "legal_sources": legal_sources,
+        "law_sources": law_sources,
+        "sector_sources": sector_sources,
+        "company_sources": company_sources,
+    }
 
 
 async def get_relevant_forms(raw_query: str, corrected_query: str, context: str, company_id: str, supabase: Client) -> List[dict]:

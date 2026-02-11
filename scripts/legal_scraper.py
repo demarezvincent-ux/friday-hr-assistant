@@ -399,12 +399,20 @@ Text (first 6000 chars):
         embedding = self.get_embedding(text[:3000])  # Use summary portion for embedding
         
         # Build record
+        # Infer legal_tier from source_type
+        tier = 3  # default: company policy
+        if source_type in ("BELGIAN_LAW", "FOUNDATION_LAW"):
+            tier = 1
+        elif source_type.startswith(("CAO", "NAR", "PC", "CCT", "CNT")):
+            tier = 2
+
         record = {
             "content": text,
             "summary": ai_meta.get("summary_english"),
             "metadata": doc_metadata,
             "content_hash": content_hash,
-            "embedding": embedding
+            "embedding": embedding,
+            "legal_tier": tier
         }
         
         try:
@@ -1612,7 +1620,8 @@ Text (first 6000 chars):
             "summary": f"{article['article_number']} - {law_info['name']}",
             "metadata": metadata,
             "content_hash": content_hash,
-            "embedding": embedding
+            "embedding": embedding,
+            "legal_tier": 1  # Federal law = highest authority
         }
         
         try:

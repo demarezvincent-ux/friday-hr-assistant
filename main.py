@@ -262,6 +262,12 @@ st.markdown("""
         border: 1px solid rgba(16, 124, 65, 0.18);
     }
     
+    .sector-source-pill {
+        background-color: rgba(217, 119, 6, 0.10);
+        color: #92400e;
+        border: 1px solid rgba(217, 119, 6, 0.18);
+    }
+    
     .company-source-pill {
         background-color: rgba(37, 99, 235, 0.08);
         color: #1e40af;
@@ -838,12 +844,48 @@ def load_chat_history(chat_id):
     except: return []
 
 def save_message(chat_id, role, content, company_id, sources=None):
-    try: 
+    try:
+        import json
+        
+        # Ensure sources is properly serialized
+        sources_data = sources if sources is not None else {}
+        
+        # CRITICAL FIX: For database storage, merge the new 3-tier structure back into 
+        # the legacy 2-key format (legal_sources, company_sources) for backward compatibility
+        # The database might have constraints expecting only these two keys
+        if isinstance(sources_data, dict):
+            # If sources has the new structure with law/sector/company tiers
+            if "law_sources" in sources_data or "sector_sources" in sources_data:
+                legacy_sources = {
+                    "legal_sources": (
+                        sources_data.get("law_sources", []) + 
+                        sources_data.get("sector_sources", []) +
+                        sources_data.get("legal_sources", [])  # backward compat
+                    ),
+                    "company_sources": sources_data.get("company_sources", [])
+                }
+                sources_data = legacy_sources
+                logger.info(f"Converted 3-tier sources to legacy format for DB storage")
+        
+        # Validate that sources is JSON-serializable
+        try:
+            json.dumps(sources_data)
+        except (TypeError, ValueError) as e:
+            logger.error(f"Sources not JSON-serializable: {e}, sources={sources_data}")
+            sources_data = {}
+        
         supabase.table("messages").insert({
-            "chat_id": chat_id, "role": role, "content": content, 
-            "sources": sources, "company_id": company_id 
+            "chat_id": chat_id, 
+            "role": role, 
+            "content": content, 
+            "sources": sources_data, 
+            "company_id": company_id 
         }).execute()
-    except: pass
+        logger.info(f"Successfully saved {role} message to chat {chat_id}")
+    except Exception as e:
+        logger.error(f"Failed to save message: {e}, chat_id={chat_id}, role={role}, has_sources={sources is not None}")
+        # Don't re-raise to prevent chat from breaking
+        pass
 
 def get_recent_chats(company_id):
     try:
@@ -872,19 +914,26 @@ def get_dynamic_greeting():
 
 # --- SOURCE DISPLAY HELPER ---
 def render_sources_html(sources) -> str:
-    """Render sources with dual-source distinction.
+    """Render sources with 3-tier legal hierarchy distinction.
     
     Accepts either:
-    - dict with legal_sources and company_sources (new format)
+    - dict with law_sources, sector_sources, company_sources (new format)
+    - dict with legal_sources and company_sources (legacy new format)
     - list (legacy format from old saved messages)
     """
     # Backward compat: convert flat list to dict
     if isinstance(sources, list):
         return _render_flat_sources(sources)
     
-    legal = sources.get("legal_sources", [])
+    law = sources.get("law_sources", [])
+    sector = sources.get("sector_sources", [])
     company = sources.get("company_sources", [])
-    total = len(legal) + len(company)
+    
+    # Backward compat: if no law/sector keys, fall back to legal_sources
+    if not law and not sector and sources.get("legal_sources"):
+        law = sources.get("legal_sources", [])
+    
+    total = len(law) + len(sector) + len(company)
     
     if total == 0:
         return '''
@@ -896,13 +945,21 @@ def render_sources_html(sources) -> str:
         </div>
         '''
     
-    # Build sections
-    legal_html = ""
-    if legal:
-        legal_pills = ''.join([f'<span class="source-pill legal-source-pill">⚖️ {s}</span>' for s in legal])
-        legal_html = f'''
-            <div class="source-group-header legal">Belgian Law</div>
-            <div class="sources-list">{legal_pills}</div>
+    # Build sections by tier
+    law_html = ""
+    if law:
+        law_pills = ''.join([f'<span class="source-pill legal-source-pill">⚖️ {s}</span>' for s in law])
+        law_html = f'''
+            <div class="source-group-header legal">Federal Law</div>
+            <div class="sources-list">{law_pills}</div>
+        '''
+    
+    sector_html = ""
+    if sector:
+        sector_pills = ''.join([f'<span class="source-pill sector-source-pill">📋 {s}</span>' for s in sector])
+        sector_html = f'''
+            <div class="source-group-header sector">Sector Agreement</div>
+            <div class="sources-list">{sector_pills}</div>
         '''
     
     company_html = ""
@@ -914,14 +971,14 @@ def render_sources_html(sources) -> str:
         '''
     
     if total == 1:
-        # Single source — no collapse
-        return f'<div class="sources-section">{legal_html}{company_html}</div>'
+        return f'<div class="sources-section">{law_html}{sector_html}{company_html}</div>'
     
     return f'''
     <div class="sources-section">
         <details>
             <summary>{total} sources used</summary>
-            {legal_html}
+            {law_html}
+            {sector_html}
             {company_html}
         </details>
     </div>
