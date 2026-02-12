@@ -799,17 +799,29 @@ def get_company_profile_snapshot(company_id):
     """Read the indexed profile back from document chunks and parse key/value pairs."""
     try:
         # First try the dedicated compact snapshot (single chunk, stable parsing)
-        snapshot_res = supabase.table("document_chunks").select("content").eq(
+        snapshot_res = supabase.table("document_chunks").select("content, created_at").eq(
             "metadata->>company_id", company_id
         ).eq(
             "metadata->>document_type", COMPANY_PROFILE_SNAPSHOT_TYPE
-        ).limit(1).execute()
+        ).order("created_at", desc=True).limit(30).execute()
         if snapshot_res.data:
-            raw = (snapshot_res.data[0] or {}).get("content", "")
-            if raw.startswith("__PROFILE_JSON__:"):
+            best_snapshot = {}
+            best_score = -1
+            for row in snapshot_res.data:
+                raw = (row or {}).get("content", "")
+                if not raw.startswith("__PROFILE_JSON__:"):
+                    continue
                 payload = raw.replace("__PROFILE_JSON__:", "", 1).strip()
-                parsed = json.loads(payload)
-                return {k: str(v) for k, v in parsed.items() if v is not None}
+                try:
+                    parsed = {k: str(v) for k, v in json.loads(payload).items() if v is not None}
+                except Exception:
+                    continue
+                score = sum(1 for f in REQUIRED_PROFILE_FIELDS if str(parsed.get(f, "")).strip())
+                if score > best_score:
+                    best_score = score
+                    best_snapshot = parsed
+            if best_snapshot:
+                return best_snapshot
 
         # Fallback to parsing regular profile chunks
         result = supabase.table("document_chunks").select("content").eq(
@@ -932,6 +944,13 @@ def index_company_profile(company_id, profile):
 
         # Store a compact JSON snapshot for reliable progress calculation and hydration
         try:
+            # Remove old profile snapshots for this company to avoid stale progress reads
+            supabase.table("document_chunks").delete().eq(
+                "metadata->>company_id", company_id
+            ).eq(
+                "metadata->>document_type", COMPANY_PROFILE_SNAPSHOT_TYPE
+            ).execute()
+
             snapshot_json = json.dumps(profile, ensure_ascii=True)
             snapshot_text = f"__PROFILE_JSON__:{snapshot_json}"
             snapshot_vecs = get_embeddings_batch([snapshot_text])
