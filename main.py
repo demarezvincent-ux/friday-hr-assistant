@@ -284,6 +284,7 @@ st.markdown("""
     }
     
     .source-group-header.legal { color: #0d6b3a; }
+    .source-group-header.sector { color: #92400e; }
     .source-group-header.company { color: #1e40af; }
     
     .no-sources {
@@ -856,12 +857,22 @@ def save_message(chat_id, role, content, company_id, sources=None):
         if isinstance(sources_data, dict):
             # If sources has the new structure with law/sector/company tiers
             if "law_sources" in sources_data or "sector_sources" in sources_data:
+                # Deduplicate: legal_sources already contains law+sector+company_legal
+                # from rag_controller, so use it directly instead of re-concatenating
+                all_legal = (
+                    sources_data.get("law_sources", []) + 
+                    sources_data.get("sector_sources", []) +
+                    sources_data.get("legal_sources", [])
+                )
+                # Remove duplicates while preserving order
+                seen = set()
+                deduped_legal = []
+                for s in all_legal:
+                    if s not in seen:
+                        seen.add(s)
+                        deduped_legal.append(s)
                 legacy_sources = {
-                    "legal_sources": (
-                        sources_data.get("law_sources", []) + 
-                        sources_data.get("sector_sources", []) +
-                        sources_data.get("legal_sources", [])  # backward compat
-                    ),
+                    "legal_sources": deduped_legal,
                     "company_sources": sources_data.get("company_sources", [])
                 }
                 sources_data = legacy_sources
@@ -926,15 +937,38 @@ def get_dynamic_greeting():
 def render_sources_html(sources) -> str:
     """Render sources with 3-tier legal hierarchy distinction.
     
-    Accepts either:
-    - dict with law_sources, sector_sources, company_sources (new format)
-    - dict with legal_sources and company_sources (legacy new format)
-    - list (legacy format from old saved messages)
+    Handles all formats:
+    - dict with law_sources, sector_sources, company_sources (live display)
+    - dict with legal_sources and company_sources (legacy or DB round-trip)
+    - list wrapping a dict [{...}] (DB storage format)
+    - flat list of strings (very old messages)
     """
-    # Backward compat: convert flat list to dict
+    # DB format: sources stored as ['{"legal_sources":[...],"company_sources":[...]}']
+    # Can be either a JSON string or a dict inside the list — handle both
     if isinstance(sources, list):
-        return _render_flat_sources(sources)
+        if len(sources) == 1:
+            item = sources[0]
+            # Case A: [{dict}] — unwrap directly
+            if isinstance(item, dict):
+                sources = item
+            # Case B: ['{"legal_sources":...}'] — JSON string, parse it
+            elif isinstance(item, str) and item.strip().startswith('{'):
+                import json
+                try:
+                    sources = json.loads(item)
+                except (json.JSONDecodeError, ValueError):
+                    return _render_flat_sources(sources)
+            else:
+                return _render_flat_sources(sources)
+        elif all(isinstance(s, str) for s in sources):
+            return _render_flat_sources(sources)  # Truly flat legacy list
+        else:
+            return _render_flat_sources([str(s) for s in sources])
     
+    if not isinstance(sources, dict):
+        return _render_empty_sources()
+    
+    # Extract tiers — support both new (law/sector) and legacy (legal_sources) keys
     law = sources.get("law_sources", [])
     sector = sources.get("sector_sources", [])
     company = sources.get("company_sources", [])
@@ -946,75 +980,44 @@ def render_sources_html(sources) -> str:
     total = len(law) + len(sector) + len(company)
     
     if total == 0:
-        return '''
-        <div class="sources-section">
-            <div class="no-sources">
-                <span>💭</span>
-                <span>This response was generated without referencing any documents</span>
-            </div>
-        </div>
-        '''
+        return _render_empty_sources()
     
-    # Build sections by tier
+    # Build sections by tier — IMPORTANT: no leading whitespace!
+    # Streamlit's markdown parser treats 4+ spaces as code blocks
     law_html = ""
     if law:
         law_pills = ''.join([f'<span class="source-pill legal-source-pill">⚖️ {s}</span>' for s in law])
-        law_html = f'''
-            <div class="source-group-header legal">Federal Law</div>
-            <div class="sources-list">{law_pills}</div>
-        '''
+        law_html = f'<div class="source-group-header legal">⚖️ Federal Law</div><div class="sources-list">{law_pills}</div>'
     
     sector_html = ""
     if sector:
         sector_pills = ''.join([f'<span class="source-pill sector-source-pill">📋 {s}</span>' for s in sector])
-        sector_html = f'''
-            <div class="source-group-header sector">Sector Agreement</div>
-            <div class="sources-list">{sector_pills}</div>
-        '''
+        sector_html = f'<div class="source-group-header sector">📋 Sector Agreement</div><div class="sources-list">{sector_pills}</div>'
     
     company_html = ""
     if company:
         company_pills = ''.join([f'<span class="source-pill company-source-pill">📄 {s}</span>' for s in company])
-        company_html = f'''
-            <div class="source-group-header company">Company Policy</div>
-            <div class="sources-list">{company_pills}</div>
-        '''
+        company_html = f'<div class="source-group-header company">📄 Company Policy</div><div class="sources-list">{company_pills}</div>'
     
     if total == 1:
         return f'<div class="sources-section">{law_html}{sector_html}{company_html}</div>'
     
-    return f'''
-    <div class="sources-section">
-        <details>
-            <summary>{total} sources used</summary>
-            {law_html}
-            {sector_html}
-            {company_html}
-        </details>
-    </div>
-    '''
+    return f'<div class="sources-section"><details><summary>📚 {total} sources used</summary>{law_html}{sector_html}{company_html}</details></div>'
+
+
+def _render_empty_sources() -> str:
+    """Render the 'no sources' placeholder."""
+    return '<div class="sources-section"><div class="no-sources"><span>💭</span><span>This response was generated without referencing any documents</span></div></div>'
 
 
 def _render_flat_sources(sources: list) -> str:
-    """Legacy renderer for old messages stored as flat list."""
+    """Legacy renderer for old messages stored as flat list of strings."""
     if not sources:
-        return '''
-        <div class="sources-section">
-            <div class="no-sources"><span>💭</span>
-                <span>This response was generated without referencing any documents</span>
-            </div>
-        </div>
-        '''
+        return _render_empty_sources()
     pills = ''.join([f'<span class="source-pill company-source-pill">📄 {s}</span>' for s in sources])
     if len(sources) == 1:
         return f'<div class="sources-section"><div class="sources-list">{pills}</div></div>'
-    return f'''
-    <div class="sources-section">
-        <details><summary>{len(sources)} sources used</summary>
-            <div class="sources-list">{pills}</div>
-        </details>
-    </div>
-    '''
+    return f'<div class="sources-section"><details><summary>📚 {len(sources)} sources used</summary><div class="sources-list">{pills}</div></details></div>'
 
 
 # --- UI PAGES ---
