@@ -461,6 +461,7 @@ if "view" not in st.session_state: st.session_state.view = "chat"
 if "onboarding_required" not in st.session_state: st.session_state.onboarding_required = False
 if "onboarding_step" not in st.session_state: st.session_state.onboarding_step = 1
 if "show_welcome_anim" not in st.session_state: st.session_state.show_welcome_anim = False
+if "onboarding_saved" not in st.session_state: st.session_state.onboarding_saved = {}
 
 @st.cache_resource
 def init_supabase():
@@ -782,6 +783,20 @@ COMMON_PC_OPTIONS = [
     "PC 322", "PC 327", "PC 330", "PC 331", "PC 337",
 ]
 
+ONBOARDING_KEYS = [
+    "ob_company_name", "ob_sector", "ob_industry_cluster", "ob_joint_committees",
+    "ob_headquarters", "ob_countries", "ob_operations", "ob_employees_total",
+    "ob_employees_belgium", "ob_contract_types", "ob_payroll_frequency_blue",
+    "ob_payroll_frequency_white", "ob_weekly_hours", "ob_shift_work",
+    "ob_remote_policy", "ob_union_presence", "ob_existing_policies", "ob_priorities",
+    "ob_open_questions", "ob_industry_specific_details", "ob_industry_specific_valid",
+    "ob_language", "ob_weekend_days", "ob_night_service", "ob_tipped_roles",
+    "ob_shift_pattern", "ob_hazardous_work", "ob_temp_peaks", "ob_store_count",
+    "ob_sunday_open", "ob_late_openings", "ob_drivers_count", "ob_cross_border",
+    "ob_warehouse_24_7", "ob_on_call", "ob_weekend_care", "ob_regulated_titles",
+    "ob_billable_hours", "ob_client_site_work", "ob_overtime_policy", "ob_industry_other_details",
+]
+
 def suggest_joint_committees(sector: str, industry_cluster: str) -> list:
     sector_text = (sector or "").lower()
     suggestions = set(INDUSTRY_PC_SUGGESTIONS.get(industry_cluster, []))
@@ -814,6 +829,18 @@ def normalize_profile_snapshot_keys(snapshot: dict) -> dict:
         if all(str(normalized.get(k, "")).strip() for k in legacy_core):
             normalized["_profile_completed"] = True
     return normalized
+
+def persist_onboarding_values():
+    saved = st.session_state.get("onboarding_saved", {})
+    for key in ONBOARDING_KEYS:
+        if key in st.session_state:
+            saved[key] = st.session_state[key]
+    st.session_state.onboarding_saved = saved
+
+def get_onboarding_value(key, default=None):
+    if key in st.session_state:
+        return st.session_state.get(key)
+    return st.session_state.get("onboarding_saved", {}).get(key, default)
 
 def company_profile_exists(company_id):
     return check_if_document_exists(COMPANY_PROFILE_FILENAME, company_id)
@@ -1523,6 +1550,7 @@ def render_sidebar():
         if st.button("✎ Update Company Profile", use_container_width=True, type="secondary"):
             st.session_state.onboarding_required = True
             st.session_state.onboarding_step = 1
+            st.session_state.onboarding_saved = {}
             st.rerun()
         st.markdown("---")
 
@@ -1860,66 +1888,67 @@ def get_industry_specific_payload(industry_cluster):
 def validate_onboarding_step(step):
     checks = {
         1: [
-            st.session_state.get("ob_company_name", "").strip(),
-            st.session_state.get("ob_sector", "").strip(),
-            st.session_state.get("ob_industry_cluster", "").strip(),
+            str(get_onboarding_value("ob_company_name", "")).strip(),
+            str(get_onboarding_value("ob_sector", "")).strip(),
+            str(get_onboarding_value("ob_industry_cluster", "")).strip(),
         ],
         2: [
-            len(st.session_state.get("ob_joint_committees", [])) > 0,
-            st.session_state.get("ob_headquarters", "").strip(),
-            st.session_state.get("ob_countries", "").strip(),
+            len(get_onboarding_value("ob_joint_committees", []) or []) > 0,
+            str(get_onboarding_value("ob_headquarters", "")).strip(),
+            str(get_onboarding_value("ob_countries", "")).strip(),
         ],
         3: [
-            st.session_state.get("ob_operations", "").strip(),
-            st.session_state.get("ob_employees_total", 0) > 0,
-            st.session_state.get("ob_employees_belgium", 0) > 0,
+            str(get_onboarding_value("ob_operations", "")).strip(),
+            (get_onboarding_value("ob_employees_total", 0) or 0) > 0,
+            (get_onboarding_value("ob_employees_belgium", 0) or 0) > 0,
         ],
         4: [
-            len(st.session_state.get("ob_contract_types", [])) > 0,
-            st.session_state.get("ob_payroll_frequency_blue", "").strip(),
-            st.session_state.get("ob_payroll_frequency_white", "").strip(),
+            len(get_onboarding_value("ob_contract_types", []) or []) > 0,
+            str(get_onboarding_value("ob_payroll_frequency_blue", "")).strip(),
+            str(get_onboarding_value("ob_payroll_frequency_white", "")).strip(),
         ],
         5: [
-            st.session_state.get("ob_weekly_hours", 0) > 0,
-            st.session_state.get("ob_shift_work", "").strip(),
-            st.session_state.get("ob_remote_policy", "").strip(),
+            (get_onboarding_value("ob_weekly_hours", 0) or 0) > 0,
+            str(get_onboarding_value("ob_shift_work", "")).strip(),
+            str(get_onboarding_value("ob_remote_policy", "")).strip(),
         ],
         6: [
-            st.session_state.get("ob_union_presence", "").strip(),
-            st.session_state.get("ob_existing_policies", "").strip(),
-            st.session_state.get("ob_priorities", "").strip(),
+            str(get_onboarding_value("ob_union_presence", "")).strip(),
+            str(get_onboarding_value("ob_existing_policies", "")).strip(),
+            str(get_onboarding_value("ob_priorities", "")).strip(),
         ],
         7: [
-            st.session_state.get("ob_industry_specific_details", "").strip(),
-            st.session_state.get("ob_industry_specific_valid", False),
+            str(get_onboarding_value("ob_industry_specific_details", "")).strip(),
+            bool(get_onboarding_value("ob_industry_specific_valid", False)),
         ],
     }
     return all(checks.get(step, []))
 
 def build_profile_from_onboarding_state():
+    persist_onboarding_values()
     return {
         "_profile_completed": True,
-        "company_name": st.session_state.get("ob_company_name", "").strip(),
-        "sector": st.session_state.get("ob_sector", "").strip(),
-        "joint_committees": ", ".join(st.session_state.get("ob_joint_committees", [])),
-        "operations": st.session_state.get("ob_operations", "").strip(),
-        "industry_cluster": st.session_state.get("ob_industry_cluster", "").strip(),
-        "headquarters": st.session_state.get("ob_headquarters", "").strip(),
-        "countries": st.session_state.get("ob_countries", "").strip(),
-        "language": st.session_state.get("ob_language", "English"),
-        "payroll_frequency_blue": st.session_state.get("ob_payroll_frequency_blue", "Weekly"),
-        "payroll_frequency_white": st.session_state.get("ob_payroll_frequency_white", "Monthly"),
-        "employees_total": int(st.session_state.get("ob_employees_total", 1)),
-        "employees_belgium": int(st.session_state.get("ob_employees_belgium", 1)),
-        "contract_types": ", ".join(st.session_state.get("ob_contract_types", [])),
-        "weekly_hours": int(st.session_state.get("ob_weekly_hours", 38)),
-        "shift_work": st.session_state.get("ob_shift_work", "No"),
-        "remote_policy": st.session_state.get("ob_remote_policy", "No remote"),
-        "union_presence": st.session_state.get("ob_union_presence", "Unknown"),
-        "existing_policies": st.session_state.get("ob_existing_policies", "").strip(),
-        "priorities": st.session_state.get("ob_priorities", "").strip(),
-        "open_questions": st.session_state.get("ob_open_questions", "").strip(),
-        "industry_specific_details": st.session_state.get("ob_industry_specific_details", "").strip(),
+        "company_name": str(get_onboarding_value("ob_company_name", "")).strip(),
+        "sector": str(get_onboarding_value("ob_sector", "")).strip(),
+        "joint_committees": ", ".join(get_onboarding_value("ob_joint_committees", []) or []),
+        "operations": str(get_onboarding_value("ob_operations", "")).strip(),
+        "industry_cluster": str(get_onboarding_value("ob_industry_cluster", "")).strip(),
+        "headquarters": str(get_onboarding_value("ob_headquarters", "")).strip(),
+        "countries": str(get_onboarding_value("ob_countries", "")).strip(),
+        "language": str(get_onboarding_value("ob_language", "English")),
+        "payroll_frequency_blue": str(get_onboarding_value("ob_payroll_frequency_blue", "Weekly")),
+        "payroll_frequency_white": str(get_onboarding_value("ob_payroll_frequency_white", "Monthly")),
+        "employees_total": int(get_onboarding_value("ob_employees_total", 1) or 1),
+        "employees_belgium": int(get_onboarding_value("ob_employees_belgium", 1) or 1),
+        "contract_types": ", ".join(get_onboarding_value("ob_contract_types", []) or []),
+        "weekly_hours": int(get_onboarding_value("ob_weekly_hours", 38) or 38),
+        "shift_work": str(get_onboarding_value("ob_shift_work", "No")),
+        "remote_policy": str(get_onboarding_value("ob_remote_policy", "No remote")),
+        "union_presence": str(get_onboarding_value("ob_union_presence", "Unknown")),
+        "existing_policies": str(get_onboarding_value("ob_existing_policies", "")).strip(),
+        "priorities": str(get_onboarding_value("ob_priorities", "")).strip(),
+        "open_questions": str(get_onboarding_value("ob_open_questions", "")).strip(),
+        "industry_specific_details": str(get_onboarding_value("ob_industry_specific_details", "")).strip(),
     }
 
 def hydrate_onboarding_from_snapshot(company_id):
@@ -1927,6 +1956,7 @@ def hydrate_onboarding_from_snapshot(company_id):
     snapshot = get_company_profile_snapshot_cached(company_id)
     if not snapshot:
         return
+    saved = st.session_state.get("onboarding_saved", {})
     mapping = {
         "company_name": "ob_company_name",
         "sector": "ob_sector",
@@ -1949,26 +1979,28 @@ def hydrate_onboarding_from_snapshot(company_id):
         "industry_specific_details": "ob_industry_specific_details",
     }
     for src, dst in mapping.items():
-        if dst in st.session_state and str(st.session_state.get(dst)).strip():
+        current = get_onboarding_value(dst, "")
+        if isinstance(current, str) and current.strip():
             continue
         value = snapshot.get(src)
         if value is None or value == "":
             continue
         if dst in {"ob_employees_total", "ob_employees_belgium", "ob_weekly_hours"}:
             try:
-                st.session_state[dst] = int(float(value))
+                saved[dst] = int(float(value))
             except Exception:
                 pass
         else:
-            st.session_state[dst] = value
+            saved[dst] = value
 
     pcs = snapshot.get("joint_committees", "")
-    if pcs and not st.session_state.get("ob_joint_committees"):
-        st.session_state["ob_joint_committees"] = [p.strip() for p in pcs.split(",") if p.strip()]
+    if pcs and not get_onboarding_value("ob_joint_committees", []):
+        saved["ob_joint_committees"] = [p.strip() for p in pcs.split(",") if p.strip()]
 
     cts = snapshot.get("contract_types", "")
-    if cts and not st.session_state.get("ob_contract_types"):
-        st.session_state["ob_contract_types"] = [c.strip() for c in cts.split(",") if c.strip()]
+    if cts and not get_onboarding_value("ob_contract_types", []):
+        saved["ob_contract_types"] = [c.strip() for c in cts.split(",") if c.strip()]
+    st.session_state.onboarding_saved = saved
 
 def onboarding_page():
     hydrate_onboarding_from_snapshot(st.session_state.company_id)
@@ -2063,6 +2095,7 @@ def onboarding_page():
     with col_next:
         if step < total_steps:
             if st.button("Next", use_container_width=True, type="primary"):
+                persist_onboarding_values()
                 if not validate_onboarding_step(step):
                     st.error("Please complete the required fields on this step.")
                 else:
@@ -2070,6 +2103,7 @@ def onboarding_page():
                     st.rerun()
         else:
             if st.button("Save Company Profile", use_container_width=True, type="primary"):
+                persist_onboarding_values()
                 if not validate_onboarding_step(step):
                     st.error("Please complete the required fields on this step.")
                 else:
@@ -2095,6 +2129,7 @@ def onboarding_page():
                         st.success("Company profile saved. You can now use FRIDAY.")
                         st.session_state.onboarding_required = False
                         st.session_state.onboarding_step = 1
+                        st.session_state.onboarding_saved = {}
                         st.session_state.show_welcome_anim = True
                         st.session_state.view = "chat"
                         if not st.session_state.current_chat_id:
