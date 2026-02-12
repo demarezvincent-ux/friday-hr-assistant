@@ -9,6 +9,7 @@ import os
 import datetime
 import uuid
 import logging
+import hashlib
 import pandas as pd
 from pptx import Presentation
 from huggingface_hub import InferenceClient
@@ -309,6 +310,35 @@ st.markdown("""
         color: #1A3C34;
     }
 
+    .onboarding-shell {
+        background: linear-gradient(135deg, #ffffff 0%, #f5f7f4 100%);
+        border: 1px solid rgba(26, 60, 52, 0.1);
+        border-radius: 18px;
+        padding: 28px;
+        box-shadow: 0 18px 50px rgba(26, 60, 52, 0.08);
+        margin-bottom: 18px;
+    }
+
+    .onboarding-title {
+        font-family: 'Playfair Display', serif;
+        font-size: 42px;
+        line-height: 1.1;
+        margin: 0 0 10px 0;
+    }
+
+    .onboarding-subtitle {
+        color: #5c6f68;
+        margin-bottom: 20px;
+    }
+
+    .legal-upload-card {
+        background: #ffffff;
+        border: 1px solid rgba(26, 60, 52, 0.12);
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 16px;
+    }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -358,6 +388,7 @@ if "authenticated" not in st.session_state: st.session_state.authenticated = Fal
 if "company_id" not in st.session_state: st.session_state.company_id = None
 if "current_chat_id" not in st.session_state: st.session_state.current_chat_id = None
 if "view" not in st.session_state: st.session_state.view = "chat"
+if "onboarding_required" not in st.session_state: st.session_state.onboarding_required = False
 
 @st.cache_resource
 def init_supabase():
@@ -487,6 +518,38 @@ def extract_file_metadata(file) -> dict:
     file.seek(0)
     return meta
 
+def extract_text_and_metadata(file):
+    """Extract text/metadata from supported file types and return (text, metadata, ext)."""
+    text = ""
+    file_metadata = {"title": sanitize_filename(file.name)}
+    ext = file.name.lower().split('.')[-1]
+    if ext == "pdf":
+        file_metadata = extract_file_metadata(file)
+        text = extract_text_from_pdf(file)
+    elif ext == "docx":
+        file_metadata = extract_file_metadata(file)
+        doc = docx.Document(file)
+        text = "\n".join([p.text for p in doc.paragraphs])
+    elif ext == "xlsx":
+        text = extract_text_from_excel(file)
+    elif ext == "pptx":
+        file_metadata = extract_file_metadata(file)
+        text = extract_text_from_pptx(file)
+    else:
+        return "", file_metadata, ext
+    return text, file_metadata, ext
+
+def get_mime_type_for_extension(ext: str) -> str:
+    if ext == "pdf":
+        return "application/pdf"
+    if ext == "docx":
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    if ext == "xlsx":
+        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    if ext == "pptx":
+        return "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    return "application/octet-stream"
+
 def recursive_chunk_text(text: str, chunk_size: int = 800, overlap: int = 150) -> list:
     """Recursive Character Splitter for semantic preservation."""
     if not text: return []
@@ -598,6 +661,196 @@ def delete_document(filename, company_id):
         return True
     except: return False
 
+COMPANY_PROFILE_FILENAME = "__company_profile__.md"
+REQUIRED_PROFILE_FIELDS = [
+    "company_name",
+    "sector",
+    "joint_committee",
+    "operations",
+    "headquarters",
+    "countries",
+    "employees_total",
+    "employees_belgium",
+    "contract_types",
+    "weekly_hours",
+    "existing_policies",
+    "priorities",
+]
+
+def company_profile_exists(company_id):
+    return check_if_document_exists(COMPANY_PROFILE_FILENAME, company_id)
+
+def get_company_profile_snapshot(company_id):
+    """Read the indexed profile back from document chunks and parse key/value pairs."""
+    try:
+        result = supabase.table("document_chunks").select("content").eq(
+            "metadata->>company_id", company_id
+        ).eq(
+            "metadata->>filename", COMPANY_PROFILE_FILENAME
+        ).execute()
+        if not result.data:
+            return {}
+
+        combined = "\n".join([(row.get("content") or "") for row in result.data if isinstance(row, dict)])
+        snapshot = {}
+        for line in combined.splitlines():
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            normalized = key.strip().lower().replace(" ", "_").replace("(", "").replace(")", "").replace("/", "_")
+            snapshot[normalized] = value.strip()
+        return snapshot
+    except Exception as e:
+        logger.warning(f"Could not fetch company profile snapshot: {e}")
+        return {}
+
+def compute_profile_completion(profile_snapshot):
+    if not profile_snapshot:
+        return 0.0
+    completed = 0
+    for field in REQUIRED_PROFILE_FIELDS:
+        value = profile_snapshot.get(field, "")
+        if isinstance(value, str) and value.strip():
+            completed += 1
+    return completed / len(REQUIRED_PROFILE_FIELDS)
+
+def index_company_profile(company_id, profile):
+    """Store structured company profile as an indexed internal document."""
+    try:
+        if check_if_document_exists(COMPANY_PROFILE_FILENAME, company_id):
+            delete_document(COMPANY_PROFILE_FILENAME, company_id)
+
+        profile_lines = [
+            "# Company Profile",
+            f"Company Name: {profile.get('company_name', '')}",
+            f"Sector: {profile.get('sector', '')}",
+            f"Joint Committee (PC): {profile.get('joint_committee', '')}",
+            f"Primary Operations: {profile.get('operations', '')}",
+            f"Industry Cluster: {profile.get('industry_cluster', '')}",
+            f"Headquarters: {profile.get('headquarters', '')}",
+            f"Countries of Operation: {profile.get('countries', '')}",
+            f"Preferred Language: {profile.get('language', '')}",
+            "",
+            "## Workforce",
+            f"Total Employees: {profile.get('employees_total', '')}",
+            f"Employees in Belgium: {profile.get('employees_belgium', '')}",
+            f"Contract Types: {profile.get('contract_types', '')}",
+            f"Union Delegation Present: {profile.get('union_presence', '')}",
+            "",
+            "## Working Conditions",
+            f"Standard Weekly Hours: {profile.get('weekly_hours', '')}",
+            f"Shift/Night/Weekend Work: {profile.get('shift_work', '')}",
+            f"Remote Work Policy: {profile.get('remote_policy', '')}",
+            f"Payroll Frequency: {profile.get('payroll_frequency', '')}",
+            "",
+            "## Policies & Context",
+            f"Current HR Policies Summary: {profile.get('existing_policies', '')}",
+            f"Top HR Compliance Priorities: {profile.get('priorities', '')}",
+            f"Open Legal Questions: {profile.get('open_questions', '')}",
+            "",
+            "## Industry Specific",
+            f"Industry Specific Details: {profile.get('industry_specific_details', '')}",
+        ]
+        profile_text = "\n".join(profile_lines).strip()
+        chunks = recursive_chunk_text(profile_text, chunk_size=700, overlap=100)
+        if not chunks:
+            return False
+
+        stored = 0
+        for i in range(0, len(chunks), 20):
+            batch = chunks[i:i+20]
+            vectors = get_embeddings_batch(batch)
+            if not vectors:
+                continue
+            payload = []
+            for j, vec in enumerate(vectors):
+                if isinstance(vec, list) and len(vec) > 300:
+                    payload.append({
+                        "content": batch[j],
+                        "metadata": {
+                            "company_id": company_id,
+                            "filename": COMPANY_PROFILE_FILENAME,
+                            "is_active": True,
+                            "title": "Company Profile",
+                            "author": profile.get("company_name", "Company"),
+                            "document_type": "company_profile",
+                        },
+                        "embedding": vec
+                    })
+            if payload:
+                supabase.table("document_chunks").insert(payload).execute()
+                stored += len(payload)
+
+        if stored == 0:
+            return False
+
+        register_document(COMPANY_PROFILE_FILENAME, company_id, {"title": "Company Profile"})
+        return True
+    except Exception as e:
+        logger.error(f"Failed to index company profile: {e}")
+        return False
+
+def process_and_store_legal_document(file, legal_type, source_code="", topic="", effective_date=""):
+    """Index legal sources into legal_knowledge for cross-company legal retrieval."""
+    if not file or not hasattr(file, 'name') or not hasattr(file, 'size'):
+        return "error"
+    if file.size > 50 * 1024 * 1024:
+        return "error"
+
+    clean_name = sanitize_filename(file.name)
+    try:
+        text, metadata, ext = extract_text_and_metadata(file)
+        if ext not in {"pdf", "docx", "xlsx", "pptx"}:
+            return "unsupported"
+    except Exception as e:
+        logger.error(f"Legal extraction failed for {clean_name}: {e}")
+        return "error"
+
+    if not text or len(text.strip()) < 10:
+        return "empty"
+
+    chunks = recursive_chunk_text(text)
+    if not chunks:
+        return "empty"
+
+    normalized_source = re.sub(r"[^A-Za-z0-9_-]", "_", (source_code or "").strip().upper())
+    source = "BELGIAN_LAW" if legal_type == "law" else (normalized_source or "CAO_UNKNOWN")
+    category = "legal_foundation" if legal_type == "law" else "sector_agreement"
+    legal_tier = 1 if legal_type == "law" else 2
+
+    stored = 0
+    for i in range(0, len(chunks), 20):
+        batch = chunks[i:i+20]
+        vectors = get_embeddings_batch(batch)
+        if not vectors:
+            continue
+        payload = []
+        for j, vec in enumerate(vectors):
+            if isinstance(vec, list) and len(vec) > 300:
+                chunk_text = batch[j]
+                hash_input = f"{source}|{clean_name}|{i + j}|{chunk_text}".encode("utf-8", errors="ignore")
+                payload.append({
+                    "content": chunk_text,
+                    "summary": chunk_text[:500],
+                    "content_hash": hashlib.md5(hash_input).hexdigest(),
+                    "metadata": {
+                        "source": source,
+                        "category": category,
+                        "topic": topic or metadata.get("title") or clean_name,
+                        "effective_date": effective_date or None,
+                        "uploaded_filename": clean_name,
+                        "legal_tier": legal_tier,
+                    },
+                    "embedding": vec,
+                })
+        if payload:
+            try:
+                supabase.table("legal_knowledge").upsert(payload, on_conflict="content_hash").execute()
+                stored += len(payload)
+            except Exception as e:
+                logger.error(f"Failed storing legal batch for {clean_name}: {e}")
+    return "success" if stored > 0 else "error"
+
 def process_and_store_document(file, company_id, force_overwrite=False):
     """Process and store document with support for PDF, DOCX, XLSX, PPTX."""
     # Validate file object
@@ -625,20 +878,9 @@ def process_and_store_document(file, company_id, force_overwrite=False):
     text = ""
     file_metadata = {"title": clean_name}
     try:
-        ext = file.name.lower().split('.')[-1]
+        text, file_metadata, ext = extract_text_and_metadata(file)
         logger.info(f"Processing file type: {ext}")
-        if ext == "pdf":
-            file_metadata = extract_file_metadata(file)
-            text = extract_text_from_pdf(file)
-        elif ext == "docx":
-            file_metadata = extract_file_metadata(file)
-            doc = docx.Document(file)
-            text = "\n".join([p.text for p in doc.paragraphs])
-        elif ext == "xlsx": text = extract_text_from_excel(file)
-        elif ext == "pptx":
-            file_metadata = extract_file_metadata(file)
-            text = extract_text_from_pptx(file)
-        else: 
+        if ext not in {"pdf", "docx", "xlsx", "pptx"}:
             logger.warning(f"Unsupported file type: {ext}")
             return "unsupported"
     except Exception as e:
@@ -670,11 +912,7 @@ def process_and_store_document(file, company_id, force_overwrite=False):
         # Sanitize company_id for storage path (remove emoji and special chars)
         safe_company_id = re.sub(r'[^\w\-]', '_', company_id)
         # Determine correct Content-Type to prevent browser rendering as text
-        mime_type = "application/octet-stream"
-        if ext == "pdf": mime_type = "application/pdf"
-        elif ext == "docx": mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        elif ext == "xlsx": mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        elif ext == "pptx": mime_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        mime_type = get_mime_type_for_extension(ext)
         
         supabase.storage.from_("documents").upload(
             f"{safe_company_id}/{clean_name}", 
@@ -1026,6 +1264,15 @@ def render_sidebar():
         # Logo
         st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100px; margin-bottom: 28px;"><span class="logo-animated" style="font-family: \'Playfair Display\', serif; font-size: 56px; font-weight: 800; color: #1A3C34; letter-spacing: -1.2px;">Friday</span></div>', unsafe_allow_html=True)
 
+        profile_snapshot = get_company_profile_snapshot(st.session_state.company_id)
+        completion_ratio = compute_profile_completion(profile_snapshot)
+        st.markdown("### Company Setup")
+        st.progress(completion_ratio, text=f"{int(completion_ratio * 100)}% complete")
+        if st.button("✎ Update Company Profile", use_container_width=True, type="secondary"):
+            st.session_state.onboarding_required = True
+            st.rerun()
+        st.markdown("---")
+
         # Navigation
         st.markdown("### Menu")
         # [FIX 1] Button selection logic is correct here, CSS handles the color
@@ -1150,95 +1397,290 @@ def documents_page():
         <h1 style="font-family: 'Playfair Display', serif; font-size: 48px; font-weight: 700; color: #1A3C34;">Knowledge Base</h1>
     </div>
     """, unsafe_allow_html=True)
-    
-    col1, col2 = st.columns([1, 1], gap="large")
-    with col1:
-        st.markdown("### Upload Documents")
-        uploaded_files = st.file_uploader(
-            "PDF, Word, Excel, PPTX", 
-            type=["pdf", "docx", "xlsx", "pptx"], 
-            accept_multiple_files=True
-        )
-        
-        c_check, c_btn = st.columns([1, 1])
-        with c_check: force_overwrite = st.checkbox("Overwrite existing?")
-        with c_btn:
-            if uploaded_files and st.button("Start Indexing", type="primary", use_container_width=True):
-                # Bulk upload results
-                results = {"success": 0, "exists": 0, "error": 0}
-                progress_bar = st.progress(0)
-                status = st.empty()
-                
-                for idx, f in enumerate(uploaded_files):
-                    status.text(f"Indexing {f.name}...")
-                    res = process_and_store_document(f, st.session_state.company_id, force_overwrite)
-                    if res == "success": results["success"] += 1
-                    elif res == "exists": results["exists"] += 1
-                    else: results["error"] += 1
-                    progress_bar.progress((idx + 1) / len(uploaded_files))
-                
-                status.empty(); progress_bar.empty()
-                if results["success"] > 0: st.success(f"✅ {results['success']} files indexed successfully!")
-                if results["exists"] > 0: st.info(f"ℹ️ {results['exists']} files already existed.")
-                if results["error"] > 0: st.error(f"❌ {results['error']} files failed to process.")
-                # Give database time to fully commit before refreshing
-                time.sleep(1)
-                st.rerun()
+    company_tab, legal_tab = st.tabs(["Company Documents", "Belgian Labor Law & CAO"])
 
-    with col2:
-        docs = get_all_documents(st.session_state.company_id)
-        chunk_counts = get_chunk_counts(st.session_state.company_id)
-        
-        # Count documents with missing chunks
-        missing_chunks = sum(1 for doc in docs if chunk_counts.get(doc['filename'], 0) == 0)
-        
-        st.markdown(f"### Indexed Files ({len(docs)})")
-        if missing_chunks > 0:
-            st.warning(f"⚠️ {missing_chunks} document(s) have no searchable chunks. Check 'Overwrite existing?' and re-upload them.")
-        
-        if not docs: st.info("No documents indexed yet.")
+    with company_tab:
+        col1, col2 = st.columns([1, 1], gap="large")
+        with col1:
+            st.markdown("### Upload Internal Documents")
+            uploaded_files = st.file_uploader(
+                "PDF, Word, Excel, PPTX",
+                type=["pdf", "docx", "xlsx", "pptx"],
+                accept_multiple_files=True,
+                key="company_docs_uploader"
+            )
+
+            c_check, c_btn = st.columns([1, 1])
+            with c_check:
+                force_overwrite = st.checkbox("Overwrite existing?", key="company_overwrite")
+            with c_btn:
+                if uploaded_files and st.button("Start Indexing", type="primary", use_container_width=True, key="company_index_btn"):
+                    results = {"success": 0, "exists": 0, "error": 0}
+                    progress_bar = st.progress(0)
+                    status = st.empty()
+
+                    for idx, f in enumerate(uploaded_files):
+                        status.text(f"Indexing {f.name}...")
+                        res = process_and_store_document(f, st.session_state.company_id, force_overwrite)
+                        if res == "success":
+                            results["success"] += 1
+                        elif res == "exists":
+                            results["exists"] += 1
+                        else:
+                            results["error"] += 1
+                        progress_bar.progress((idx + 1) / len(uploaded_files))
+
+                    status.empty()
+                    progress_bar.empty()
+                    if results["success"] > 0:
+                        st.success(f"✅ {results['success']} files indexed successfully.")
+                    if results["exists"] > 0:
+                        st.info(f"ℹ️ {results['exists']} files already existed.")
+                    if results["error"] > 0:
+                        st.error(f"❌ {results['error']} files failed to process.")
+                    time.sleep(1)
+                    st.rerun()
+
+        with col2:
+            docs = get_all_documents(st.session_state.company_id)
+            chunk_counts = get_chunk_counts(st.session_state.company_id)
+            missing_chunks = sum(1 for doc in docs if chunk_counts.get(doc['filename'], 0) == 0)
+
+            st.markdown(f"### Indexed Files ({len(docs)})")
+            if missing_chunks > 0:
+                st.warning(f"⚠️ {missing_chunks} document(s) have no searchable chunks. Check 'Overwrite existing?' and re-upload them.")
+
+            if not docs:
+                st.info("No documents indexed yet.")
+            else:
+                for doc in docs:
+                    chunks = chunk_counts.get(doc['filename'], 0)
+                    status_icon = "🟢" if doc['is_active'] else "⚪"
+                    chunk_warning = " ⚠️" if chunks == 0 else ""
+                    file_ext = doc['filename'].split('.')[-1].upper()
+                    display_name = doc['filename'][:37] + "..." if len(doc['filename']) > 40 else doc['filename']
+
+                    col_status, col_name, col_chunks, col_toggle, col_delete = st.columns([0.5, 3.5, 0.8, 0.5, 0.5])
+                    with col_status:
+                        st.markdown(f"<div style='padding-top: 8px;'>{status_icon}</div>", unsafe_allow_html=True)
+                    with col_name:
+                        st.markdown(f'''
+                        <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0;">
+                            <span style="font-weight: 500; color: #1A3C34;">{file_ext}</span>
+                            <span title="{doc['filename']}" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{display_name}</span>
+                        </div>
+                        ''', unsafe_allow_html=True)
+                    with col_chunks:
+                        chunk_color = "#e74c3c" if chunks == 0 else "#1A3C34"
+                        st.markdown(f'''
+                        <div style="padding: 8px 0; font-size: 12px; color: {chunk_color};" title="Number of searchable chunks">
+                            {chunks} chunks{chunk_warning}
+                        </div>
+                        ''', unsafe_allow_html=True)
+                    with col_toggle:
+                        if st.button("⏸" if doc['is_active'] else "▶", key=f"pause_{doc['id']}", help="Pause/Resume"):
+                            toggle_document_status(doc['filename'], st.session_state.company_id, doc['is_active'])
+                            st.rerun()
+                    with col_delete:
+                        if st.button("🗑", key=f"del_doc_{doc['id']}", help="Delete"):
+                            delete_document(doc['filename'], st.session_state.company_id)
+                            st.rerun()
+                    st.markdown("<hr style='margin: 4px 0; border: none; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
+
+    with legal_tab:
+        st.markdown('<div class="legal-upload-card">', unsafe_allow_html=True)
+        st.markdown("### Upload Belgian Labor Law and CAOs")
+        st.caption("Use this to quickly add legal references FRIDAY can cite directly in answers.")
+
+        legal_type = st.selectbox(
+            "Document type",
+            options=[("law", "Belgian Federal Law"), ("cao", "CAO / Sector Agreement")],
+            format_func=lambda x: x[1],
+            key="legal_type"
+        )[0]
+        source_code = st.text_input(
+            "Source code",
+            value="BELGIAN_LAW" if legal_type == "law" else "",
+            help="Examples: BELGIAN_LAW, PC200, CAO_XXX",
+            key="legal_source_code"
+        )
+        topic = st.text_input("Topic (optional)", placeholder="Employment contracts, Working time, Wages...", key="legal_topic")
+        effective_date = st.text_input("Effective date (YYYY-MM-DD, optional)", key="legal_effective_date")
+        legal_files = st.file_uploader(
+            "Upload legal files",
+            type=["pdf", "docx", "xlsx", "pptx"],
+            accept_multiple_files=True,
+            key="legal_docs_uploader"
+        )
+
+        if legal_files and st.button("Index Legal Sources", type="primary", use_container_width=True, key="legal_index_btn"):
+            results = {"success": 0, "error": 0}
+            progress_bar = st.progress(0)
+            status = st.empty()
+            date_value = effective_date.strip()
+
+            for idx, f in enumerate(legal_files):
+                status.text(f"Indexing {f.name}...")
+                res = process_and_store_legal_document(
+                    file=f,
+                    legal_type=legal_type,
+                    source_code=source_code,
+                    topic=topic,
+                    effective_date=date_value,
+                )
+                if res == "success":
+                    results["success"] += 1
+                else:
+                    results["error"] += 1
+                progress_bar.progress((idx + 1) / len(legal_files))
+
+            status.empty()
+            progress_bar.empty()
+            if results["success"] > 0:
+                st.success(f"✅ {results['success']} legal file(s) indexed.")
+            if results["error"] > 0:
+                st.error(f"❌ {results['error']} legal file(s) failed.")
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+def onboarding_page():
+    st.markdown("""
+    <div class="onboarding-shell">
+        <h1 class="onboarding-title">Set Up Your Company Profile</h1>
+        <p class="onboarding-subtitle">We need this once so Friday can apply Belgian labor law and CAO rules correctly for your company.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.form("company_onboarding_form", clear_on_submit=False):
+        st.markdown("### Company Information")
+        c1, c2 = st.columns(2)
+        with c1:
+            company_name = st.text_input("Company name *")
+            sector = st.text_input("Sector *", placeholder="Hospitality, Manufacturing, Retail...")
+            joint_committee = st.text_input("Joint Committee (PC) *", placeholder="Example: PC 200")
+            headquarters = st.text_input("Headquarters (city, country) *", placeholder="Brussels, Belgium")
+        with c2:
+            operations = st.text_area("Main business activities *", height=100)
+            industry_cluster = st.selectbox(
+                "Industry cluster *",
+                ["Hospitality", "Manufacturing", "Retail", "Logistics/Transport", "Healthcare", "Professional Services", "Other"]
+            )
+            countries = st.text_input("Countries of operation *", value="Belgium")
+            language = st.selectbox("Preferred answer language *", ["English", "Dutch", "French"])
+            payroll_frequency = st.selectbox("Payroll frequency *", ["Monthly", "Every 2 weeks", "Weekly"])
+
+        st.markdown("### Workforce and Conditions")
+        w1, w2 = st.columns(2)
+        with w1:
+            employees_total = st.number_input("Total employees *", min_value=1, step=1)
+            employees_belgium = st.number_input("Employees in Belgium *", min_value=1, step=1)
+            contract_types = st.multiselect(
+                "Contract types used *",
+                ["Full-time", "Part-time", "Fixed-term", "Temporary agency", "Student", "Freelancers"]
+            )
+        with w2:
+            weekly_hours = st.number_input("Standard weekly hours *", min_value=1, max_value=60, value=38, step=1)
+            shift_work = st.selectbox("Shift/night/weekend work *", ["No", "Occasionally", "Regularly"])
+            remote_policy = st.selectbox("Remote work policy *", ["No remote", "Hybrid", "Fully remote"])
+            union_presence = st.selectbox("Union delegation present *", ["Yes", "No", "Unknown"])
+
+        st.markdown("### Policies and Priorities")
+        existing_policies = st.text_area("Current HR policy summary *", height=100)
+        priorities = st.text_area("Top compliance priorities *", height=80, placeholder="Working time, overtime, leave, dismissal, wage indexation...")
+        open_questions = st.text_area("Open HR/legal questions (optional)", height=80)
+
+        st.markdown("### Industry Specific Questions")
+        industry_specific_details = ""
+        industry_specific_valid = True
+        if industry_cluster == "Hospitality":
+            weekend_days = st.multiselect("Weekend opening days *", ["Saturday", "Sunday"])
+            night_service = st.selectbox("Night service after 22:00 *", ["No", "Occasionally", "Regularly"])
+            tipped_roles = st.selectbox("Tipped/front-of-house roles *", ["Yes", "No"])
+            industry_specific_valid = len(weekend_days) > 0
+            industry_specific_details = f"Weekend days: {', '.join(weekend_days)}; Night service: {night_service}; Tipped roles: {tipped_roles}"
+        elif industry_cluster == "Manufacturing":
+            shift_pattern = st.selectbox("Shift model *", ["No shifts", "2 shifts", "3 shifts", "Continuous"])
+            hazardous_work = st.selectbox("Hazardous work/materials *", ["No", "Yes"])
+            temp_peaks = st.selectbox("Seasonal temp-worker peaks *", ["No", "Yes"])
+            industry_specific_details = f"Shift model: {shift_pattern}; Hazardous work: {hazardous_work}; Temp peaks: {temp_peaks}"
+        elif industry_cluster == "Retail":
+            store_count = st.number_input("Number of stores/sites *", min_value=1, step=1)
+            sunday_open = st.selectbox("Sunday opening *", ["No", "Yes"])
+            late_openings = st.selectbox("Late openings after 20:00 *", ["No", "Occasionally", "Regularly"])
+            industry_specific_details = f"Stores: {int(store_count)}; Sunday opening: {sunday_open}; Late openings: {late_openings}"
+        elif industry_cluster == "Logistics/Transport":
+            drivers_count = st.number_input("Number of drivers *", min_value=0, step=1)
+            cross_border = st.selectbox("Cross-border operations *", ["No", "Yes"])
+            warehouse_24_7 = st.selectbox("24/7 warehouse operations *", ["No", "Yes"])
+            industry_specific_details = f"Drivers: {int(drivers_count)}; Cross-border: {cross_border}; 24/7 warehouse: {warehouse_24_7}"
+        elif industry_cluster == "Healthcare":
+            on_call = st.selectbox("On-call duty *", ["No", "Yes"])
+            weekend_care = st.selectbox("Weekend care staffing *", ["No", "Yes"])
+            regulated_titles = st.selectbox("Regulated medical roles *", ["No", "Yes"])
+            industry_specific_details = f"On-call: {on_call}; Weekend care: {weekend_care}; Regulated roles: {regulated_titles}"
+        elif industry_cluster == "Professional Services":
+            billable_hours = st.selectbox("Billable-hours model *", ["No", "Yes"])
+            client_site_work = st.selectbox("Client-site work *", ["No", "Occasionally", "Regularly"])
+            overtime_policy = st.selectbox("Overtime compensation policy defined *", ["No", "Yes"])
+            industry_specific_details = f"Billable model: {billable_hours}; Client-site work: {client_site_work}; Overtime policy: {overtime_policy}"
         else:
-            for doc in docs:
-                chunks = chunk_counts.get(doc['filename'], 0)
-                status_icon = "🟢" if doc['is_active'] else "⚪"
-                chunk_warning = " ⚠️" if chunks == 0 else ""
-                file_ext = doc['filename'].split('.')[-1].upper()
-                # Truncate long filenames for display
-                display_name = doc['filename']
-                if len(display_name) > 40:
-                    display_name = display_name[:37] + "..."
-                
-                # Use columns for clean layout: icon, name, chunks, actions
-                col_status, col_name, col_chunks, col_toggle, col_delete = st.columns([0.5, 3.5, 0.8, 0.5, 0.5])
-                
-                with col_status:
-                    st.markdown(f"<div style='padding-top: 8px;'>{status_icon}</div>", unsafe_allow_html=True)
-                
-                with col_name:
-                    st.markdown(f'''
-                    <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0;">
-                        <span style="font-weight: 500; color: #1A3C34;">{file_ext}</span>
-                        <span title="{doc['filename']}" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{display_name}</span>
-                    </div>
-                    ''', unsafe_allow_html=True)
-                
-                with col_chunks:
-                    chunk_color = "#e74c3c" if chunks == 0 else "#1A3C34"
-                    st.markdown(f'''
-                    <div style="padding: 8px 0; font-size: 12px; color: {chunk_color};" title="Number of searchable chunks">
-                        {chunks} chunks{chunk_warning}
-                    </div>
-                    ''', unsafe_allow_html=True)
-                
-                with col_toggle:
-                    if st.button("⏸" if doc['is_active'] else "▶", key=f"pause_{doc['id']}", help="Pause/Resume"):
-                        toggle_document_status(doc['filename'], st.session_state.company_id, doc['is_active']); st.rerun()
-                
-                with col_delete:
-                    if st.button("🗑", key=f"del_doc_{doc['id']}", help="Delete"):
-                        delete_document(doc['filename'], st.session_state.company_id); st.rerun()
-                
-                st.markdown("<hr style='margin: 4px 0; border: none; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
+            industry_specific_details = st.text_area("Industry-specific constraints *", placeholder="Describe schedules, regulations, or collective requirements.", height=90)
+            industry_specific_valid = bool(industry_specific_details.strip())
+
+        submitted = st.form_submit_button("Save Company Profile", type="primary", use_container_width=True)
+
+    if submitted:
+        required_checks = [
+            company_name.strip(),
+            sector.strip(),
+            joint_committee.strip(),
+            headquarters.strip(),
+            operations.strip(),
+            countries.strip(),
+            existing_policies.strip(),
+            priorities.strip(),
+            len(contract_types) > 0,
+            industry_cluster.strip(),
+            industry_specific_details.strip(),
+            industry_specific_valid,
+        ]
+        if not all(required_checks):
+            st.error("Please complete all required fields marked with *.")
+            return
+
+        profile = {
+            "company_name": company_name.strip(),
+            "sector": sector.strip(),
+            "joint_committee": joint_committee.strip(),
+            "operations": operations.strip(),
+            "industry_cluster": industry_cluster.strip(),
+            "headquarters": headquarters.strip(),
+            "countries": countries.strip(),
+            "language": language,
+            "payroll_frequency": payroll_frequency,
+            "employees_total": int(employees_total),
+            "employees_belgium": int(employees_belgium),
+            "contract_types": ", ".join(contract_types),
+            "weekly_hours": int(weekly_hours),
+            "shift_work": shift_work,
+            "remote_policy": remote_policy,
+            "union_presence": union_presence,
+            "existing_policies": existing_policies.strip(),
+            "priorities": priorities.strip(),
+            "open_questions": open_questions.strip(),
+            "industry_specific_details": industry_specific_details.strip(),
+        }
+        ok = index_company_profile(st.session_state.company_id, profile)
+        if ok:
+            st.success("Company profile saved. You can now use FRIDAY.")
+            st.session_state.onboarding_required = False
+            st.session_state.view = "chat"
+            if not st.session_state.current_chat_id:
+                create_new_chat()
+            time.sleep(0.8)
+            st.rerun()
+        else:
+            st.error("Could not save the company profile. Please try again.")
 
 
 # --- 5. AUTHENTICATION ---
@@ -1253,6 +1695,8 @@ def handle_login():
         if res.data:
             st.session_state.authenticated = True
             st.session_state.company_id = res.data[0]['company_id']
+            st.session_state.onboarding_required = not company_profile_exists(st.session_state.company_id)
+            st.session_state.view = "onboarding" if st.session_state.onboarding_required else "chat"
             st.session_state.login_error = None
         else: st.session_state.login_error = "Invalid Code"
     except: st.session_state.login_error = "Connection Error"
@@ -1278,6 +1722,9 @@ def login_page():
 
 if not st.session_state.authenticated: login_page()
 else:
-    render_sidebar()
-    if st.session_state.view == "chat": chat_page()
-    elif st.session_state.view == "documents": documents_page()
+    if st.session_state.onboarding_required:
+        onboarding_page()
+    else:
+        render_sidebar()
+        if st.session_state.view == "chat": chat_page()
+        elif st.session_state.view == "documents": documents_page()
