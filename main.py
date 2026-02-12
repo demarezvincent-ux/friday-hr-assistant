@@ -339,6 +339,41 @@ st.markdown("""
         margin-bottom: 16px;
     }
 
+    @keyframes softFloatIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .animated-panel {
+        animation: softFloatIn 0.35s ease-out;
+    }
+
+    .onboarding-step-card {
+        background: #ffffff;
+        border: 1px solid rgba(26, 60, 52, 0.10);
+        border-radius: 14px;
+        padding: 18px;
+        box-shadow: 0 8px 24px rgba(26, 60, 52, 0.06);
+        transition: transform 0.25s ease, box-shadow 0.25s ease;
+    }
+
+    .onboarding-step-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 28px rgba(26, 60, 52, 0.09);
+    }
+
+    .stButton > button {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .stButton > button:hover {
+        transform: translateY(-1px);
+    }
+
+    [data-testid="stProgressBar"] > div > div > div > div {
+        transition: width 0.35s ease;
+    }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -389,6 +424,7 @@ if "company_id" not in st.session_state: st.session_state.company_id = None
 if "current_chat_id" not in st.session_state: st.session_state.current_chat_id = None
 if "view" not in st.session_state: st.session_state.view = "chat"
 if "onboarding_required" not in st.session_state: st.session_state.onboarding_required = False
+if "onboarding_step" not in st.session_state: st.session_state.onboarding_step = 1
 
 @st.cache_resource
 def init_supabase():
@@ -1270,6 +1306,7 @@ def render_sidebar():
         st.progress(completion_ratio, text=f"{int(completion_ratio * 100)}% complete")
         if st.button("✎ Update Company Profile", use_container_width=True, type="secondary"):
             st.session_state.onboarding_required = True
+            st.session_state.onboarding_step = 1
             st.rerun()
         st.markdown("---")
 
@@ -1543,144 +1580,208 @@ def documents_page():
 
         st.markdown('</div>', unsafe_allow_html=True)
 
+def get_industry_specific_payload(industry_cluster):
+    """Return (details_text, is_valid) for the selected industry-specific step."""
+    if industry_cluster == "Hospitality":
+        weekend_days = st.multiselect("Weekend opening days *", ["Saturday", "Sunday"], key="ob_weekend_days")
+        night_service = st.selectbox("Night service after 22:00 *", ["No", "Occasionally", "Regularly"], key="ob_night_service")
+        tipped_roles = st.selectbox("Tipped/front-of-house roles *", ["Yes", "No"], key="ob_tipped_roles")
+        details = f"Weekend days: {', '.join(weekend_days)}; Night service: {night_service}; Tipped roles: {tipped_roles}"
+        return details, len(weekend_days) > 0
+    if industry_cluster == "Manufacturing":
+        shift_pattern = st.selectbox("Shift model *", ["No shifts", "2 shifts", "3 shifts", "Continuous"], key="ob_shift_pattern")
+        hazardous_work = st.selectbox("Hazardous work/materials *", ["No", "Yes"], key="ob_hazardous_work")
+        temp_peaks = st.selectbox("Seasonal temp-worker peaks *", ["No", "Yes"], key="ob_temp_peaks")
+        return f"Shift model: {shift_pattern}; Hazardous work: {hazardous_work}; Temp peaks: {temp_peaks}", True
+    if industry_cluster == "Retail":
+        store_count = st.number_input("Number of stores/sites *", min_value=1, step=1, key="ob_store_count")
+        sunday_open = st.selectbox("Sunday opening *", ["No", "Yes"], key="ob_sunday_open")
+        late_openings = st.selectbox("Late openings after 20:00 *", ["No", "Occasionally", "Regularly"], key="ob_late_openings")
+        return f"Stores: {int(store_count)}; Sunday opening: {sunday_open}; Late openings: {late_openings}", True
+    if industry_cluster == "Logistics/Transport":
+        drivers_count = st.number_input("Number of drivers *", min_value=0, step=1, key="ob_drivers_count")
+        cross_border = st.selectbox("Cross-border operations *", ["No", "Yes"], key="ob_cross_border")
+        warehouse_24_7 = st.selectbox("24/7 warehouse operations *", ["No", "Yes"], key="ob_warehouse_24_7")
+        return f"Drivers: {int(drivers_count)}; Cross-border: {cross_border}; 24/7 warehouse: {warehouse_24_7}", True
+    if industry_cluster == "Healthcare":
+        on_call = st.selectbox("On-call duty *", ["No", "Yes"], key="ob_on_call")
+        weekend_care = st.selectbox("Weekend care staffing *", ["No", "Yes"], key="ob_weekend_care")
+        regulated_titles = st.selectbox("Regulated medical roles *", ["No", "Yes"], key="ob_regulated_titles")
+        return f"On-call: {on_call}; Weekend care: {weekend_care}; Regulated roles: {regulated_titles}", True
+    if industry_cluster == "Professional Services":
+        billable_hours = st.selectbox("Billable-hours model *", ["No", "Yes"], key="ob_billable_hours")
+        client_site_work = st.selectbox("Client-site work *", ["No", "Occasionally", "Regularly"], key="ob_client_site_work")
+        overtime_policy = st.selectbox("Overtime compensation policy defined *", ["No", "Yes"], key="ob_overtime_policy")
+        return f"Billable model: {billable_hours}; Client-site work: {client_site_work}; Overtime policy: {overtime_policy}", True
+    details = st.text_area(
+        "Industry-specific constraints *",
+        placeholder="Describe schedules, regulations, or collective requirements.",
+        height=90,
+        key="ob_industry_other_details"
+    )
+    return details, bool(details.strip())
+
+def validate_onboarding_step(step):
+    checks = {
+        1: [
+            st.session_state.get("ob_company_name", "").strip(),
+            st.session_state.get("ob_sector", "").strip(),
+            st.session_state.get("ob_industry_cluster", "").strip(),
+        ],
+        2: [
+            st.session_state.get("ob_joint_committee", "").strip(),
+            st.session_state.get("ob_headquarters", "").strip(),
+            st.session_state.get("ob_countries", "").strip(),
+        ],
+        3: [
+            st.session_state.get("ob_operations", "").strip(),
+            st.session_state.get("ob_employees_total", 0) > 0,
+            st.session_state.get("ob_employees_belgium", 0) > 0,
+        ],
+        4: [
+            len(st.session_state.get("ob_contract_types", [])) > 0,
+            st.session_state.get("ob_weekly_hours", 0) > 0,
+            st.session_state.get("ob_payroll_frequency", "").strip(),
+        ],
+        5: [
+            st.session_state.get("ob_shift_work", "").strip(),
+            st.session_state.get("ob_remote_policy", "").strip(),
+            st.session_state.get("ob_union_presence", "").strip(),
+        ],
+        6: [
+            st.session_state.get("ob_existing_policies", "").strip(),
+            st.session_state.get("ob_priorities", "").strip(),
+        ],
+        7: [
+            st.session_state.get("ob_industry_specific_details", "").strip(),
+            st.session_state.get("ob_industry_specific_valid", False),
+        ],
+    }
+    return all(checks.get(step, []))
+
+def build_profile_from_onboarding_state():
+    return {
+        "company_name": st.session_state.get("ob_company_name", "").strip(),
+        "sector": st.session_state.get("ob_sector", "").strip(),
+        "joint_committee": st.session_state.get("ob_joint_committee", "").strip(),
+        "operations": st.session_state.get("ob_operations", "").strip(),
+        "industry_cluster": st.session_state.get("ob_industry_cluster", "").strip(),
+        "headquarters": st.session_state.get("ob_headquarters", "").strip(),
+        "countries": st.session_state.get("ob_countries", "").strip(),
+        "language": st.session_state.get("ob_language", "English"),
+        "payroll_frequency": st.session_state.get("ob_payroll_frequency", "Monthly"),
+        "employees_total": int(st.session_state.get("ob_employees_total", 1)),
+        "employees_belgium": int(st.session_state.get("ob_employees_belgium", 1)),
+        "contract_types": ", ".join(st.session_state.get("ob_contract_types", [])),
+        "weekly_hours": int(st.session_state.get("ob_weekly_hours", 38)),
+        "shift_work": st.session_state.get("ob_shift_work", "No"),
+        "remote_policy": st.session_state.get("ob_remote_policy", "No remote"),
+        "union_presence": st.session_state.get("ob_union_presence", "Unknown"),
+        "existing_policies": st.session_state.get("ob_existing_policies", "").strip(),
+        "priorities": st.session_state.get("ob_priorities", "").strip(),
+        "open_questions": st.session_state.get("ob_open_questions", "").strip(),
+        "industry_specific_details": st.session_state.get("ob_industry_specific_details", "").strip(),
+    }
+
 def onboarding_page():
+    total_steps = 7
+    step = st.session_state.get("onboarding_step", 1)
+    step = max(1, min(total_steps, step))
+    st.session_state.onboarding_step = step
+
     st.markdown("""
-    <div class="onboarding-shell">
+    <div class="onboarding-shell animated-panel">
         <h1 class="onboarding-title">Set Up Your Company Profile</h1>
-        <p class="onboarding-subtitle">We need this once so Friday can apply Belgian labor law and CAO rules correctly for your company.</p>
+        <p class="onboarding-subtitle">Guided setup in short steps. We ask a few questions at a time so Friday can apply Belgian labor law and CAO rules accurately.</p>
     </div>
     """, unsafe_allow_html=True)
 
-    with st.form("company_onboarding_form", clear_on_submit=False):
-        st.markdown("### Company Information")
-        c1, c2 = st.columns(2)
-        with c1:
-            company_name = st.text_input("Company name *")
-            sector = st.text_input("Sector *", placeholder="Hospitality, Manufacturing, Retail...")
-            joint_committee = st.text_input("Joint Committee (PC) *", placeholder="Example: PC 200")
-            headquarters = st.text_input("Headquarters (city, country) *", placeholder="Brussels, Belgium")
-        with c2:
-            operations = st.text_area("Main business activities *", height=100)
-            industry_cluster = st.selectbox(
-                "Industry cluster *",
-                ["Hospitality", "Manufacturing", "Retail", "Logistics/Transport", "Healthcare", "Professional Services", "Other"]
-            )
-            countries = st.text_input("Countries of operation *", value="Belgium")
-            language = st.selectbox("Preferred answer language *", ["English", "Dutch", "French"])
-            payroll_frequency = st.selectbox("Payroll frequency *", ["Monthly", "Every 2 weeks", "Weekly"])
+    st.progress(step / total_steps, text=f"Step {step} of {total_steps}")
+    st.caption("Maximum 3 questions per step.")
 
-        st.markdown("### Workforce and Conditions")
-        w1, w2 = st.columns(2)
-        with w1:
-            employees_total = st.number_input("Total employees *", min_value=1, step=1)
-            employees_belgium = st.number_input("Employees in Belgium *", min_value=1, step=1)
-            contract_types = st.multiselect(
-                "Contract types used *",
-                ["Full-time", "Part-time", "Fixed-term", "Temporary agency", "Student", "Freelancers"]
-            )
-        with w2:
-            weekly_hours = st.number_input("Standard weekly hours *", min_value=1, max_value=60, value=38, step=1)
-            shift_work = st.selectbox("Shift/night/weekend work *", ["No", "Occasionally", "Regularly"])
-            remote_policy = st.selectbox("Remote work policy *", ["No remote", "Hybrid", "Fully remote"])
-            union_presence = st.selectbox("Union delegation present *", ["Yes", "No", "Unknown"])
+    st.markdown('<div class="onboarding-step-card animated-panel">', unsafe_allow_html=True)
+    if step == 1:
+        st.markdown("### 1. Company Basics")
+        st.text_input("Company name *", key="ob_company_name")
+        st.text_input("Sector *", placeholder="Hospitality, Manufacturing, Retail...", key="ob_sector")
+        st.selectbox(
+            "Industry cluster *",
+            ["Hospitality", "Manufacturing", "Retail", "Logistics/Transport", "Healthcare", "Professional Services", "Other"],
+            key="ob_industry_cluster"
+        )
+    elif step == 2:
+        st.markdown("### 2. Legal Scope")
+        st.text_input("Joint Committee (PC) *", placeholder="Example: PC 200", key="ob_joint_committee")
+        st.text_input("Headquarters (city, country) *", placeholder="Brussels, Belgium", key="ob_headquarters")
+        st.text_input("Countries of operation *", value=st.session_state.get("ob_countries", "Belgium"), key="ob_countries")
+    elif step == 3:
+        st.markdown("### 3. Workforce Snapshot")
+        st.text_area("Main business activities *", height=100, key="ob_operations")
+        st.number_input("Total employees *", min_value=1, step=1, key="ob_employees_total")
+        st.number_input("Employees in Belgium *", min_value=1, step=1, key="ob_employees_belgium")
+    elif step == 4:
+        st.markdown("### 4. Contracts and Time")
+        st.multiselect(
+            "Contract types used *",
+            ["Full-time", "Part-time", "Fixed-term", "Temporary agency", "Student", "Freelancers"],
+            key="ob_contract_types"
+        )
+        st.number_input("Standard weekly hours *", min_value=1, max_value=60, value=38, step=1, key="ob_weekly_hours")
+        st.selectbox("Payroll frequency *", ["Monthly", "Every 2 weeks", "Weekly"], key="ob_payroll_frequency")
+    elif step == 5:
+        st.markdown("### 5. Work Pattern")
+        st.selectbox("Shift/night/weekend work *", ["No", "Occasionally", "Regularly"], key="ob_shift_work")
+        st.selectbox("Remote work policy *", ["No remote", "Hybrid", "Fully remote"], key="ob_remote_policy")
+        st.selectbox("Union delegation present *", ["Yes", "No", "Unknown"], key="ob_union_presence")
+    elif step == 6:
+        st.markdown("### 6. Policies and Priorities")
+        st.text_area("Current HR policy summary *", height=110, key="ob_existing_policies")
+        st.text_area(
+            "Top compliance priorities *",
+            height=90,
+            placeholder="Working time, overtime, leave, dismissal, wage indexation...",
+            key="ob_priorities"
+        )
+        st.text_area("Open HR/legal questions (optional)", height=80, key="ob_open_questions")
+    else:
+        st.markdown("### 7. Industry Details")
+        details, is_valid = get_industry_specific_payload(st.session_state.get("ob_industry_cluster", "Other"))
+        st.session_state.ob_industry_specific_details = details
+        st.session_state.ob_industry_specific_valid = is_valid
 
-        st.markdown("### Policies and Priorities")
-        existing_policies = st.text_area("Current HR policy summary *", height=100)
-        priorities = st.text_area("Top compliance priorities *", height=80, placeholder="Working time, overtime, leave, dismissal, wage indexation...")
-        open_questions = st.text_area("Open HR/legal questions (optional)", height=80)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown("### Industry Specific Questions")
-        industry_specific_details = ""
-        industry_specific_valid = True
-        if industry_cluster == "Hospitality":
-            weekend_days = st.multiselect("Weekend opening days *", ["Saturday", "Sunday"])
-            night_service = st.selectbox("Night service after 22:00 *", ["No", "Occasionally", "Regularly"])
-            tipped_roles = st.selectbox("Tipped/front-of-house roles *", ["Yes", "No"])
-            industry_specific_valid = len(weekend_days) > 0
-            industry_specific_details = f"Weekend days: {', '.join(weekend_days)}; Night service: {night_service}; Tipped roles: {tipped_roles}"
-        elif industry_cluster == "Manufacturing":
-            shift_pattern = st.selectbox("Shift model *", ["No shifts", "2 shifts", "3 shifts", "Continuous"])
-            hazardous_work = st.selectbox("Hazardous work/materials *", ["No", "Yes"])
-            temp_peaks = st.selectbox("Seasonal temp-worker peaks *", ["No", "Yes"])
-            industry_specific_details = f"Shift model: {shift_pattern}; Hazardous work: {hazardous_work}; Temp peaks: {temp_peaks}"
-        elif industry_cluster == "Retail":
-            store_count = st.number_input("Number of stores/sites *", min_value=1, step=1)
-            sunday_open = st.selectbox("Sunday opening *", ["No", "Yes"])
-            late_openings = st.selectbox("Late openings after 20:00 *", ["No", "Occasionally", "Regularly"])
-            industry_specific_details = f"Stores: {int(store_count)}; Sunday opening: {sunday_open}; Late openings: {late_openings}"
-        elif industry_cluster == "Logistics/Transport":
-            drivers_count = st.number_input("Number of drivers *", min_value=0, step=1)
-            cross_border = st.selectbox("Cross-border operations *", ["No", "Yes"])
-            warehouse_24_7 = st.selectbox("24/7 warehouse operations *", ["No", "Yes"])
-            industry_specific_details = f"Drivers: {int(drivers_count)}; Cross-border: {cross_border}; 24/7 warehouse: {warehouse_24_7}"
-        elif industry_cluster == "Healthcare":
-            on_call = st.selectbox("On-call duty *", ["No", "Yes"])
-            weekend_care = st.selectbox("Weekend care staffing *", ["No", "Yes"])
-            regulated_titles = st.selectbox("Regulated medical roles *", ["No", "Yes"])
-            industry_specific_details = f"On-call: {on_call}; Weekend care: {weekend_care}; Regulated roles: {regulated_titles}"
-        elif industry_cluster == "Professional Services":
-            billable_hours = st.selectbox("Billable-hours model *", ["No", "Yes"])
-            client_site_work = st.selectbox("Client-site work *", ["No", "Occasionally", "Regularly"])
-            overtime_policy = st.selectbox("Overtime compensation policy defined *", ["No", "Yes"])
-            industry_specific_details = f"Billable model: {billable_hours}; Client-site work: {client_site_work}; Overtime policy: {overtime_policy}"
-        else:
-            industry_specific_details = st.text_area("Industry-specific constraints *", placeholder="Describe schedules, regulations, or collective requirements.", height=90)
-            industry_specific_valid = bool(industry_specific_details.strip())
-
-        submitted = st.form_submit_button("Save Company Profile", type="primary", use_container_width=True)
-
-    if submitted:
-        required_checks = [
-            company_name.strip(),
-            sector.strip(),
-            joint_committee.strip(),
-            headquarters.strip(),
-            operations.strip(),
-            countries.strip(),
-            existing_policies.strip(),
-            priorities.strip(),
-            len(contract_types) > 0,
-            industry_cluster.strip(),
-            industry_specific_details.strip(),
-            industry_specific_valid,
-        ]
-        if not all(required_checks):
-            st.error("Please complete all required fields marked with *.")
-            return
-
-        profile = {
-            "company_name": company_name.strip(),
-            "sector": sector.strip(),
-            "joint_committee": joint_committee.strip(),
-            "operations": operations.strip(),
-            "industry_cluster": industry_cluster.strip(),
-            "headquarters": headquarters.strip(),
-            "countries": countries.strip(),
-            "language": language,
-            "payroll_frequency": payroll_frequency,
-            "employees_total": int(employees_total),
-            "employees_belgium": int(employees_belgium),
-            "contract_types": ", ".join(contract_types),
-            "weekly_hours": int(weekly_hours),
-            "shift_work": shift_work,
-            "remote_policy": remote_policy,
-            "union_presence": union_presence,
-            "existing_policies": existing_policies.strip(),
-            "priorities": priorities.strip(),
-            "open_questions": open_questions.strip(),
-            "industry_specific_details": industry_specific_details.strip(),
-        }
-        ok = index_company_profile(st.session_state.company_id, profile)
-        if ok:
-            st.success("Company profile saved. You can now use FRIDAY.")
-            st.session_state.onboarding_required = False
-            st.session_state.view = "chat"
-            if not st.session_state.current_chat_id:
-                create_new_chat()
-            time.sleep(0.8)
+    col_back, col_next = st.columns([1, 1])
+    with col_back:
+        if step > 1 and st.button("Back", use_container_width=True):
+            st.session_state.onboarding_step = step - 1
             st.rerun()
+    with col_next:
+        if step < total_steps:
+            if st.button("Next", use_container_width=True, type="primary"):
+                if not validate_onboarding_step(step):
+                    st.error("Please complete the required fields on this step.")
+                else:
+                    st.session_state.onboarding_step = step + 1
+                    st.rerun()
         else:
-            st.error("Could not save the company profile. Please try again.")
+            if st.button("Save Company Profile", use_container_width=True, type="primary"):
+                if not validate_onboarding_step(step):
+                    st.error("Please complete the required fields on this step.")
+                else:
+                    profile = build_profile_from_onboarding_state()
+                    ok = index_company_profile(st.session_state.company_id, profile)
+                    if ok:
+                        st.success("Company profile saved. You can now use FRIDAY.")
+                        st.session_state.onboarding_required = False
+                        st.session_state.onboarding_step = 1
+                        st.session_state.view = "chat"
+                        if not st.session_state.current_chat_id:
+                            create_new_chat()
+                        time.sleep(0.8)
+                        st.rerun()
+                    else:
+                        st.error("Could not save the company profile. Please try again.")
 
 
 # --- 5. AUTHENTICATION ---
@@ -1697,6 +1798,7 @@ def handle_login():
             st.session_state.company_id = res.data[0]['company_id']
             st.session_state.onboarding_required = not company_profile_exists(st.session_state.company_id)
             st.session_state.view = "onboarding" if st.session_state.onboarding_required else "chat"
+            st.session_state.onboarding_step = 1
             st.session_state.login_error = None
         else: st.session_state.login_error = "Invalid Code"
     except: st.session_state.login_error = "Connection Error"
