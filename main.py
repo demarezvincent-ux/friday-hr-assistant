@@ -10,6 +10,7 @@ import datetime
 import uuid
 import logging
 import hashlib
+import json
 import pandas as pd
 from pptx import Presentation
 from huggingface_hub import InferenceClient
@@ -374,6 +375,40 @@ st.markdown("""
         transition: width 0.35s ease;
     }
 
+    @keyframes fadeWideIn {
+        from { opacity: 0; transform: scale(0.985); }
+        to { opacity: 1; transform: scale(1); }
+    }
+
+    @keyframes typing {
+        from { width: 0; }
+        to { width: 100%; }
+    }
+
+    @keyframes blinkCaret {
+        50% { border-color: transparent; }
+    }
+
+    .welcome-shell {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 48vh;
+        animation: fadeWideIn 0.6s ease-out;
+    }
+
+    .welcome-typewriter {
+        overflow: hidden;
+        white-space: nowrap;
+        border-right: 2px solid var(--primary);
+        font-family: 'Playfair Display', serif;
+        font-size: clamp(36px, 5vw, 68px);
+        color: var(--primary);
+        letter-spacing: 0.02em;
+        width: 0;
+        animation: typing 2.2s steps(18, end) forwards, blinkCaret 0.85s step-end infinite;
+    }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -425,6 +460,7 @@ if "current_chat_id" not in st.session_state: st.session_state.current_chat_id =
 if "view" not in st.session_state: st.session_state.view = "chat"
 if "onboarding_required" not in st.session_state: st.session_state.onboarding_required = False
 if "onboarding_step" not in st.session_state: st.session_state.onboarding_step = 1
+if "show_welcome_anim" not in st.session_state: st.session_state.show_welcome_anim = False
 
 @st.cache_resource
 def init_supabase():
@@ -698,6 +734,7 @@ def delete_document(filename, company_id):
     except: return False
 
 COMPANY_PROFILE_FILENAME = "__company_profile__.md"
+COMPANY_PROFILE_SNAPSHOT_TYPE = "company_profile_snapshot"
 REQUIRED_PROFILE_FIELDS = [
     "company_name",
     "sector",
@@ -761,6 +798,20 @@ def company_profile_exists(company_id):
 def get_company_profile_snapshot(company_id):
     """Read the indexed profile back from document chunks and parse key/value pairs."""
     try:
+        # First try the dedicated compact snapshot (single chunk, stable parsing)
+        snapshot_res = supabase.table("document_chunks").select("content").eq(
+            "metadata->>company_id", company_id
+        ).eq(
+            "metadata->>document_type", COMPANY_PROFILE_SNAPSHOT_TYPE
+        ).limit(1).execute()
+        if snapshot_res.data:
+            raw = (snapshot_res.data[0] or {}).get("content", "")
+            if raw.startswith("__PROFILE_JSON__:"):
+                payload = raw.replace("__PROFILE_JSON__:", "", 1).strip()
+                parsed = json.loads(payload)
+                return {k: str(v) for k, v in parsed.items() if v is not None}
+
+        # Fallback to parsing regular profile chunks
         result = supabase.table("document_chunks").select("content").eq(
             "metadata->>company_id", company_id
         ).eq(
@@ -878,6 +929,26 @@ def index_company_profile(company_id, profile):
 
         if stored == 0:
             return False
+
+        # Store a compact JSON snapshot for reliable progress calculation and hydration
+        try:
+            snapshot_json = json.dumps(profile, ensure_ascii=True)
+            snapshot_text = f"__PROFILE_JSON__:{snapshot_json}"
+            snapshot_vecs = get_embeddings_batch([snapshot_text])
+            if snapshot_vecs and isinstance(snapshot_vecs[0], list) and len(snapshot_vecs[0]) > 300:
+                supabase.table("document_chunks").insert({
+                    "content": snapshot_text,
+                    "metadata": {
+                        "company_id": company_id,
+                        "filename": COMPANY_PROFILE_FILENAME,
+                        "is_active": True,
+                        "title": "Company Profile Snapshot",
+                        "document_type": COMPANY_PROFILE_SNAPSHOT_TYPE,
+                    },
+                    "embedding": snapshot_vecs[0],
+                }).execute()
+        except Exception as e:
+            logger.warning(f"Could not store compact profile snapshot: {e}")
 
         registered = register_document(COMPANY_PROFILE_FILENAME, company_id, {"title": "Company Profile"})
         return bool(registered)
@@ -1468,6 +1539,15 @@ def chat_page():
     if not st.session_state.current_chat_id: create_new_chat()
     history = load_chat_history(st.session_state.current_chat_id)
 
+    if st.session_state.get("show_welcome_anim"):
+        st.markdown(
+            '<div class="welcome-shell"><div class="welcome-typewriter">Welcome to Friday</div></div>',
+            unsafe_allow_html=True
+        )
+        st.session_state.show_welcome_anim = False
+        time.sleep(1.1)
+        st.rerun()
+
     if not history:
         greeting = get_dynamic_greeting()
         st.markdown(f"""
@@ -1744,7 +1824,57 @@ def build_profile_from_onboarding_state():
         "industry_specific_details": st.session_state.get("ob_industry_specific_details", "").strip(),
     }
 
+def hydrate_onboarding_from_snapshot(company_id):
+    """Pre-fill onboarding fields from saved company profile."""
+    snapshot = get_company_profile_snapshot(company_id)
+    if not snapshot:
+        return
+    mapping = {
+        "company_name": "ob_company_name",
+        "sector": "ob_sector",
+        "industry_cluster": "ob_industry_cluster",
+        "operations": "ob_operations",
+        "headquarters": "ob_headquarters",
+        "countries": "ob_countries",
+        "language": "ob_language",
+        "payroll_frequency_blue": "ob_payroll_frequency_blue",
+        "payroll_frequency_white": "ob_payroll_frequency_white",
+        "employees_total": "ob_employees_total",
+        "employees_belgium": "ob_employees_belgium",
+        "weekly_hours": "ob_weekly_hours",
+        "shift_work": "ob_shift_work",
+        "remote_policy": "ob_remote_policy",
+        "union_presence": "ob_union_presence",
+        "existing_policies": "ob_existing_policies",
+        "priorities": "ob_priorities",
+        "open_questions": "ob_open_questions",
+        "industry_specific_details": "ob_industry_specific_details",
+    }
+    for src, dst in mapping.items():
+        if dst in st.session_state and str(st.session_state.get(dst)).strip():
+            continue
+        value = snapshot.get(src)
+        if value is None or value == "":
+            continue
+        if dst in {"ob_employees_total", "ob_employees_belgium", "ob_weekly_hours"}:
+            try:
+                st.session_state[dst] = int(float(value))
+            except Exception:
+                pass
+        else:
+            st.session_state[dst] = value
+
+    pcs = snapshot.get("joint_committees", "")
+    if pcs and not st.session_state.get("ob_joint_committees"):
+        st.session_state["ob_joint_committees"] = [p.strip() for p in pcs.split(",") if p.strip()]
+
+    cts = snapshot.get("contract_types", "")
+    if cts and not st.session_state.get("ob_contract_types"):
+        st.session_state["ob_contract_types"] = [c.strip() for c in cts.split(",") if c.strip()]
+
 def onboarding_page():
+    hydrate_onboarding_from_snapshot(st.session_state.company_id)
+
     total_steps = 7
     step = st.session_state.get("onboarding_step", 1)
     step = max(1, min(total_steps, step))
@@ -1867,6 +1997,7 @@ def onboarding_page():
                         st.success("Company profile saved. You can now use FRIDAY.")
                         st.session_state.onboarding_required = False
                         st.session_state.onboarding_step = 1
+                        st.session_state.show_welcome_anim = True
                         st.session_state.view = "chat"
                         if not st.session_state.current_chat_id:
                             create_new_chat()
