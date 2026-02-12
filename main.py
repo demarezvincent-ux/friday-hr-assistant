@@ -798,30 +798,18 @@ def company_profile_exists(company_id):
 def get_company_profile_snapshot(company_id):
     """Read the indexed profile back from document chunks and parse key/value pairs."""
     try:
-        # First try the dedicated compact snapshot (single chunk, stable parsing)
+        # Read the latest snapshot for THIS company only.
         snapshot_res = supabase.table("document_chunks").select("content, created_at").eq(
             "metadata->>company_id", company_id
         ).eq(
             "metadata->>document_type", COMPANY_PROFILE_SNAPSHOT_TYPE
-        ).order("created_at", desc=True).limit(30).execute()
+        ).order("created_at", desc=True).limit(1).execute()
         if snapshot_res.data:
-            best_snapshot = {}
-            best_score = -1
-            for row in snapshot_res.data:
-                raw = (row or {}).get("content", "")
-                if not raw.startswith("__PROFILE_JSON__:"):
-                    continue
+            raw = (snapshot_res.data[0] or {}).get("content", "")
+            if raw.startswith("__PROFILE_JSON__:"):
                 payload = raw.replace("__PROFILE_JSON__:", "", 1).strip()
-                try:
-                    parsed = {k: str(v) for k, v in json.loads(payload).items() if v is not None}
-                except Exception:
-                    continue
-                score = sum(1 for f in REQUIRED_PROFILE_FIELDS if str(parsed.get(f, "")).strip())
-                if score > best_score:
-                    best_score = score
-                    best_snapshot = parsed
-            if best_snapshot:
-                return best_snapshot
+                parsed = {k: str(v) for k, v in json.loads(payload).items() if v is not None}
+                return parsed
 
         # Fallback to parsing regular profile chunks
         result = supabase.table("document_chunks").select("content").eq(
@@ -858,6 +846,31 @@ def get_company_profile_snapshot(company_id):
     except Exception as e:
         logger.warning(f"Could not fetch company profile snapshot: {e}")
         return {}
+
+def format_profile_memory(profile_snapshot):
+    if not profile_snapshot:
+        return ""
+    lines = [
+        "=== COMPANY MEMORY (USE THIS CONTEXT FOR COMPANY-SPECIFIC ANSWERS) ===",
+        f"Company Name: {profile_snapshot.get('company_name', '')}",
+        f"Sector: {profile_snapshot.get('sector', '')}",
+        f"Joint Committees (PC): {profile_snapshot.get('joint_committees', '')}",
+        f"Operations: {profile_snapshot.get('operations', '')}",
+        f"Headquarters: {profile_snapshot.get('headquarters', '')}",
+        f"Countries: {profile_snapshot.get('countries', '')}",
+        f"Employees Total: {profile_snapshot.get('employees_total', '')}",
+        f"Employees Belgium: {profile_snapshot.get('employees_belgium', '')}",
+        f"Contract Types: {profile_snapshot.get('contract_types', '')}",
+        f"Weekly Hours: {profile_snapshot.get('weekly_hours', '')}",
+        f"Payroll Blue-collar: {profile_snapshot.get('payroll_frequency_blue', '')}",
+        f"Payroll White-collar: {profile_snapshot.get('payroll_frequency_white', '')}",
+        f"Shift Work: {profile_snapshot.get('shift_work', '')}",
+        f"Remote Policy: {profile_snapshot.get('remote_policy', '')}",
+        f"Union Presence: {profile_snapshot.get('union_presence', '')}",
+        f"Policy Summary: {profile_snapshot.get('existing_policies', '')}",
+        f"Compliance Priorities: {profile_snapshot.get('priorities', '')}",
+    ]
+    return "\n".join(lines)
 
 def compute_profile_completion(profile_snapshot):
     if not profile_snapshot:
@@ -1530,11 +1543,22 @@ def handle_query(query):
             hf_api_key=HF_API_KEY,
             top_k=10
         ))
+
+        # Always include current company profile memory in the final context.
+        profile_snapshot = get_company_profile_snapshot(st.session_state.company_id)
+        profile_memory = format_profile_memory(profile_snapshot)
+        if profile_memory:
+            context = f"{profile_memory}\n\n{context}" if context else profile_memory
         
         response = ask_groq(context, history, query)
         
         # source_dict = {"legal_sources": [...], "company_sources": [...]}
         display_sources = source_dict if isinstance(source_dict, dict) else {"legal_sources": [], "company_sources": []}
+        if profile_memory and isinstance(display_sources, dict):
+            cs = display_sources.get("company_sources", [])
+            if "Company Profile Memory" not in cs:
+                cs = ["Company Profile Memory"] + cs
+                display_sources["company_sources"] = cs
         save_message(st.session_state.current_chat_id, "assistant", response, st.session_state.company_id, display_sources)
         msg_placeholder.empty()
         st.markdown(response)
