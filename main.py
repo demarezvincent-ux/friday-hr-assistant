@@ -701,7 +701,7 @@ COMPANY_PROFILE_FILENAME = "__company_profile__.md"
 REQUIRED_PROFILE_FIELDS = [
     "company_name",
     "sector",
-    "joint_committee",
+    "joint_committees",
     "operations",
     "headquarters",
     "countries",
@@ -709,9 +709,51 @@ REQUIRED_PROFILE_FIELDS = [
     "employees_belgium",
     "contract_types",
     "weekly_hours",
+    "payroll_frequency_blue",
+    "payroll_frequency_white",
     "existing_policies",
     "priorities",
 ]
+
+SECTOR_PC_SUGGESTIONS = {
+    "food": ["PC 118", "PC 119", "PC 220"],
+    "hospitality": ["PC 302"],
+    "horeca": ["PC 302"],
+    "retail": ["PC 201", "PC 311", "PC 312"],
+    "manufacturing": ["PC 111", "PC 124", "PC 200"],
+    "construction": ["PC 124"],
+    "logistics": ["PC 140.03", "PC 226"],
+    "transport": ["PC 140.03"],
+    "healthcare": ["PC 330", "PC 331"],
+    "services": ["PC 200"],
+}
+
+INDUSTRY_PC_SUGGESTIONS = {
+    "Hospitality": ["PC 302"],
+    "Manufacturing": ["PC 111", "PC 124", "PC 200"],
+    "Retail": ["PC 201", "PC 311", "PC 312"],
+    "Logistics/Transport": ["PC 140.03", "PC 226"],
+    "Healthcare": ["PC 330", "PC 331"],
+    "Professional Services": ["PC 200", "PC 218"],
+    "Other": ["PC 200"],
+}
+
+COMMON_PC_OPTIONS = [
+    "PC 100", "PC 109", "PC 111", "PC 116", "PC 118", "PC 119", "PC 124",
+    "PC 140.03", "PC 145", "PC 149.01", "PC 200", "PC 201", "PC 202", "PC 207",
+    "PC 209", "PC 218", "PC 220", "PC 226", "PC 302", "PC 311", "PC 312",
+    "PC 322", "PC 327", "PC 330", "PC 331", "PC 337",
+]
+
+def suggest_joint_committees(sector: str, industry_cluster: str) -> list:
+    sector_text = (sector or "").lower()
+    suggestions = set(INDUSTRY_PC_SUGGESTIONS.get(industry_cluster, []))
+    for keyword, pcs in SECTOR_PC_SUGGESTIONS.items():
+        if keyword in sector_text:
+            suggestions.update(pcs)
+    if not suggestions:
+        suggestions.add("PC 200")
+    return sorted(suggestions)
 
 def company_profile_exists(company_id):
     return check_if_document_exists(COMPANY_PROFILE_FILENAME, company_id)
@@ -729,11 +771,25 @@ def get_company_profile_snapshot(company_id):
 
         combined = "\n".join([(row.get("content") or "") for row in result.data if isinstance(row, dict)])
         snapshot = {}
+        alias_map = {
+            "joint_committee_pc": "joint_committees",
+            "joint_committees_pc": "joint_committees",
+            "countries_of_operation": "countries",
+            "total_employees": "employees_total",
+            "employees_in_belgium": "employees_belgium",
+            "standard_weekly_hours": "weekly_hours",
+            "payroll_frequency_bluecollar": "payroll_frequency_blue",
+            "payroll_frequency_whitecollar": "payroll_frequency_white",
+            "primary_operations": "operations",
+            "current_hr_policies_summary": "existing_policies",
+            "top_hr_compliance_priorities": "priorities",
+        }
         for line in combined.splitlines():
             if ":" not in line:
                 continue
             key, value = line.split(":", 1)
             normalized = key.strip().lower().replace(" ", "_").replace("(", "").replace(")", "").replace("/", "_")
+            normalized = alias_map.get(normalized, normalized)
             snapshot[normalized] = value.strip()
         return snapshot
     except Exception as e:
@@ -748,6 +804,8 @@ def compute_profile_completion(profile_snapshot):
         value = profile_snapshot.get(field, "")
         if isinstance(value, str) and value.strip():
             completed += 1
+        elif isinstance(value, (int, float)) and value > 0:
+            completed += 1
     return completed / len(REQUIRED_PROFILE_FIELDS)
 
 def index_company_profile(company_id, profile):
@@ -760,7 +818,7 @@ def index_company_profile(company_id, profile):
             "# Company Profile",
             f"Company Name: {profile.get('company_name', '')}",
             f"Sector: {profile.get('sector', '')}",
-            f"Joint Committee (PC): {profile.get('joint_committee', '')}",
+            f"Joint Committees (PC): {profile.get('joint_committees', '')}",
             f"Primary Operations: {profile.get('operations', '')}",
             f"Industry Cluster: {profile.get('industry_cluster', '')}",
             f"Headquarters: {profile.get('headquarters', '')}",
@@ -777,7 +835,8 @@ def index_company_profile(company_id, profile):
             f"Standard Weekly Hours: {profile.get('weekly_hours', '')}",
             f"Shift/Night/Weekend Work: {profile.get('shift_work', '')}",
             f"Remote Work Policy: {profile.get('remote_policy', '')}",
-            f"Payroll Frequency: {profile.get('payroll_frequency', '')}",
+            f"Payroll Frequency (Blue-collar): {profile.get('payroll_frequency_blue', '')}",
+            f"Payroll Frequency (White-collar): {profile.get('payroll_frequency_white', '')}",
             "",
             "## Policies & Context",
             f"Current HR Policies Summary: {profile.get('existing_policies', '')}",
@@ -820,8 +879,8 @@ def index_company_profile(company_id, profile):
         if stored == 0:
             return False
 
-        register_document(COMPANY_PROFILE_FILENAME, company_id, {"title": "Company Profile"})
-        return True
+        registered = register_document(COMPANY_PROFILE_FILENAME, company_id, {"title": "Company Profile"})
+        return bool(registered)
     except Exception as e:
         logger.error(f"Failed to index company profile: {e}")
         return False
@@ -1629,7 +1688,7 @@ def validate_onboarding_step(step):
             st.session_state.get("ob_industry_cluster", "").strip(),
         ],
         2: [
-            st.session_state.get("ob_joint_committee", "").strip(),
+            len(st.session_state.get("ob_joint_committees", [])) > 0,
             st.session_state.get("ob_headquarters", "").strip(),
             st.session_state.get("ob_countries", "").strip(),
         ],
@@ -1640,15 +1699,16 @@ def validate_onboarding_step(step):
         ],
         4: [
             len(st.session_state.get("ob_contract_types", [])) > 0,
-            st.session_state.get("ob_weekly_hours", 0) > 0,
-            st.session_state.get("ob_payroll_frequency", "").strip(),
+            st.session_state.get("ob_payroll_frequency_blue", "").strip(),
+            st.session_state.get("ob_payroll_frequency_white", "").strip(),
         ],
         5: [
+            st.session_state.get("ob_weekly_hours", 0) > 0,
             st.session_state.get("ob_shift_work", "").strip(),
             st.session_state.get("ob_remote_policy", "").strip(),
-            st.session_state.get("ob_union_presence", "").strip(),
         ],
         6: [
+            st.session_state.get("ob_union_presence", "").strip(),
             st.session_state.get("ob_existing_policies", "").strip(),
             st.session_state.get("ob_priorities", "").strip(),
         ],
@@ -1663,13 +1723,14 @@ def build_profile_from_onboarding_state():
     return {
         "company_name": st.session_state.get("ob_company_name", "").strip(),
         "sector": st.session_state.get("ob_sector", "").strip(),
-        "joint_committee": st.session_state.get("ob_joint_committee", "").strip(),
+        "joint_committees": ", ".join(st.session_state.get("ob_joint_committees", [])),
         "operations": st.session_state.get("ob_operations", "").strip(),
         "industry_cluster": st.session_state.get("ob_industry_cluster", "").strip(),
         "headquarters": st.session_state.get("ob_headquarters", "").strip(),
         "countries": st.session_state.get("ob_countries", "").strip(),
         "language": st.session_state.get("ob_language", "English"),
-        "payroll_frequency": st.session_state.get("ob_payroll_frequency", "Monthly"),
+        "payroll_frequency_blue": st.session_state.get("ob_payroll_frequency_blue", "Weekly"),
+        "payroll_frequency_white": st.session_state.get("ob_payroll_frequency_white", "Monthly"),
         "employees_total": int(st.session_state.get("ob_employees_total", 1)),
         "employees_belgium": int(st.session_state.get("ob_employees_belgium", 1)),
         "contract_types": ", ".join(st.session_state.get("ob_contract_types", [])),
@@ -1699,7 +1760,6 @@ def onboarding_page():
     st.progress(step / total_steps, text=f"Step {step} of {total_steps}")
     st.caption("Maximum 3 questions per step.")
 
-    st.markdown('<div class="onboarding-step-card animated-panel">', unsafe_allow_html=True)
     if step == 1:
         st.markdown("### 1. Company Basics")
         st.text_input("Company name *", key="ob_company_name")
@@ -1711,7 +1771,18 @@ def onboarding_page():
         )
     elif step == 2:
         st.markdown("### 2. Legal Scope")
-        st.text_input("Joint Committee (PC) *", placeholder="Example: PC 200", key="ob_joint_committee")
+        suggested_pcs = suggest_joint_committees(
+            st.session_state.get("ob_sector", ""),
+            st.session_state.get("ob_industry_cluster", "")
+        )
+        st.info(f"Suggested PCs based on sector: {', '.join(suggested_pcs)}")
+        pc_options = sorted(set(COMMON_PC_OPTIONS + suggested_pcs))
+        st.multiselect(
+            "Applicable Joint Committees (PC) *",
+            options=pc_options,
+            default=[pc for pc in st.session_state.get("ob_joint_committees", []) if pc in pc_options],
+            key="ob_joint_committees"
+        )
         st.text_input("Headquarters (city, country) *", placeholder="Brussels, Belgium", key="ob_headquarters")
         st.text_input("Countries of operation *", value=st.session_state.get("ob_countries", "Belgium"), key="ob_countries")
     elif step == 3:
@@ -1720,21 +1791,22 @@ def onboarding_page():
         st.number_input("Total employees *", min_value=1, step=1, key="ob_employees_total")
         st.number_input("Employees in Belgium *", min_value=1, step=1, key="ob_employees_belgium")
     elif step == 4:
-        st.markdown("### 4. Contracts and Time")
+        st.markdown("### 4. Contracts and Payroll")
         st.multiselect(
             "Contract types used *",
             ["Full-time", "Part-time", "Fixed-term", "Temporary agency", "Student", "Freelancers"],
             key="ob_contract_types"
         )
-        st.number_input("Standard weekly hours *", min_value=1, max_value=60, value=38, step=1, key="ob_weekly_hours")
-        st.selectbox("Payroll frequency *", ["Monthly", "Every 2 weeks", "Weekly"], key="ob_payroll_frequency")
+        st.selectbox("Blue-collar payroll frequency *", ["Weekly", "Every 2 weeks", "Monthly"], key="ob_payroll_frequency_blue")
+        st.selectbox("White-collar payroll frequency *", ["Monthly", "Every 2 weeks", "Weekly"], key="ob_payroll_frequency_white")
     elif step == 5:
         st.markdown("### 5. Work Pattern")
+        st.number_input("Standard weekly hours *", min_value=1, max_value=60, value=38, step=1, key="ob_weekly_hours")
         st.selectbox("Shift/night/weekend work *", ["No", "Occasionally", "Regularly"], key="ob_shift_work")
         st.selectbox("Remote work policy *", ["No remote", "Hybrid", "Fully remote"], key="ob_remote_policy")
-        st.selectbox("Union delegation present *", ["Yes", "No", "Unknown"], key="ob_union_presence")
     elif step == 6:
         st.markdown("### 6. Policies and Priorities")
+        st.selectbox("Union delegation present *", ["Yes", "No", "Unknown"], key="ob_union_presence")
         st.text_area("Current HR policy summary *", height=110, key="ob_existing_policies")
         st.text_area(
             "Top compliance priorities *",
@@ -1748,8 +1820,12 @@ def onboarding_page():
         details, is_valid = get_industry_specific_payload(st.session_state.get("ob_industry_cluster", "Other"))
         st.session_state.ob_industry_specific_details = details
         st.session_state.ob_industry_specific_valid = is_valid
-
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.file_uploader(
+            "Upload company policy documents (optional)",
+            type=["pdf", "docx", "xlsx", "pptx"],
+            accept_multiple_files=True,
+            key="ob_policy_files"
+        )
 
     col_back, col_next = st.columns([1, 1])
     with col_back:
@@ -1772,6 +1848,22 @@ def onboarding_page():
                     profile = build_profile_from_onboarding_state()
                     ok = index_company_profile(st.session_state.company_id, profile)
                     if ok:
+                        policy_files = st.session_state.get("ob_policy_files") or []
+                        upload_results = {"success": 0, "exists": 0, "error": 0}
+                        for f in policy_files:
+                            res = process_and_store_document(f, st.session_state.company_id, force_overwrite=False)
+                            if res == "success":
+                                upload_results["success"] += 1
+                            elif res == "exists":
+                                upload_results["exists"] += 1
+                            else:
+                                upload_results["error"] += 1
+
+                        if upload_results["success"] > 0:
+                            st.info(f"Policy uploads indexed: {upload_results['success']}.")
+                        if upload_results["error"] > 0:
+                            st.warning(f"Some policy uploads failed: {upload_results['error']}.")
+
                         st.success("Company profile saved. You can now use FRIDAY.")
                         st.session_state.onboarding_required = False
                         st.session_state.onboarding_step = 1
