@@ -792,6 +792,29 @@ def suggest_joint_committees(sector: str, industry_cluster: str) -> list:
         suggestions.add("PC 200")
     return sorted(suggestions)
 
+def normalize_profile_snapshot_keys(snapshot: dict) -> dict:
+    if not isinstance(snapshot, dict):
+        return {}
+    normalized = dict(snapshot)
+    # Legacy key migrations
+    if normalized.get("joint_committee") and not normalized.get("joint_committees"):
+        normalized["joint_committees"] = normalized.get("joint_committee")
+    if normalized.get("payroll_frequency"):
+        if not normalized.get("payroll_frequency_blue"):
+            normalized["payroll_frequency_blue"] = normalized.get("payroll_frequency")
+        if not normalized.get("payroll_frequency_white"):
+            normalized["payroll_frequency_white"] = normalized.get("payroll_frequency")
+    # If legacy snapshot has all core fields, mark as complete.
+    legacy_core = [
+        "company_name", "sector", "operations", "headquarters", "countries",
+        "employees_total", "employees_belgium", "contract_types", "weekly_hours",
+        "existing_policies", "priorities"
+    ]
+    if not normalized.get("_profile_completed"):
+        if all(str(normalized.get(k, "")).strip() for k in legacy_core):
+            normalized["_profile_completed"] = True
+    return normalized
+
 def company_profile_exists(company_id):
     return check_if_document_exists(COMPANY_PROFILE_FILENAME, company_id)
 
@@ -809,7 +832,7 @@ def get_company_profile_snapshot(company_id):
             if raw.startswith("__PROFILE_JSON__:"):
                 payload = raw.replace("__PROFILE_JSON__:", "", 1).strip()
                 parsed = {k: str(v) for k, v in json.loads(payload).items() if v is not None}
-                return parsed
+                return normalize_profile_snapshot_keys(parsed)
 
         # Fallback to parsing regular profile chunks
         result = supabase.table("document_chunks").select("content").eq(
@@ -842,7 +865,7 @@ def get_company_profile_snapshot(company_id):
             normalized = key.strip().lower().replace(" ", "_").replace("(", "").replace(")", "").replace("/", "_")
             normalized = alias_map.get(normalized, normalized)
             snapshot[normalized] = value.strip()
-        return snapshot
+        return normalize_profile_snapshot_keys(snapshot)
     except Exception as e:
         logger.warning(f"Could not fetch company profile snapshot: {e}")
         return {}
@@ -892,6 +915,9 @@ def format_profile_memory(profile_snapshot):
 def compute_profile_completion(profile_snapshot):
     if not profile_snapshot:
         return 0.0
+    completed_flag = str(profile_snapshot.get("_profile_completed", "")).strip().lower()
+    if completed_flag in {"true", "1", "yes"}:
+        return 1.0
     completed = 0
     for field in REQUIRED_PROFILE_FIELDS:
         value = profile_snapshot.get(field, "")
@@ -1485,6 +1511,15 @@ def render_sidebar():
         completion_ratio = compute_profile_completion(profile_snapshot)
         st.markdown("### Company Setup")
         st.progress(completion_ratio, text=f"{int(completion_ratio * 100)}% complete")
+        if completion_ratio < 1.0:
+            missing = []
+            for f in REQUIRED_PROFILE_FIELDS:
+                v = profile_snapshot.get(f, "")
+                if not (isinstance(v, str) and v.strip()) and not (isinstance(v, (int, float)) and v > 0):
+                    missing.append(f)
+            with st.expander("Profile completeness details"):
+                st.caption("Missing fields")
+                st.code(", ".join(missing) if missing else "None")
         if st.button("✎ Update Company Profile", use_container_width=True, type="secondary"):
             st.session_state.onboarding_required = True
             st.session_state.onboarding_step = 1
@@ -1863,6 +1898,7 @@ def validate_onboarding_step(step):
 
 def build_profile_from_onboarding_state():
     return {
+        "_profile_completed": True,
         "company_name": st.session_state.get("ob_company_name", "").strip(),
         "sector": st.session_state.get("ob_sector", "").strip(),
         "joint_committees": ", ".join(st.session_state.get("ob_joint_committees", [])),
