@@ -799,11 +799,11 @@ def get_company_profile_snapshot(company_id):
     """Read the indexed profile back from document chunks and parse key/value pairs."""
     try:
         # Read the latest snapshot for THIS company only.
-        snapshot_res = supabase.table("document_chunks").select("content, created_at").eq(
+        snapshot_res = supabase.table("document_chunks").select("id, content").eq(
             "metadata->>company_id", company_id
         ).eq(
             "metadata->>document_type", COMPANY_PROFILE_SNAPSHOT_TYPE
-        ).order("created_at", desc=True).limit(1).execute()
+        ).order("id", desc=True).limit(1).execute()
         if snapshot_res.data:
             raw = (snapshot_res.data[0] or {}).get("content", "")
             if raw.startswith("__PROFILE_JSON__:"):
@@ -846,6 +846,23 @@ def get_company_profile_snapshot(company_id):
     except Exception as e:
         logger.warning(f"Could not fetch company profile snapshot: {e}")
         return {}
+
+def get_company_profile_snapshot_cached(company_id):
+    if not company_id:
+        return {}
+    cache_key = f"profile_snapshot_cache::{company_id}"
+    if cache_key in st.session_state:
+        return st.session_state.get(cache_key) or {}
+    snapshot = get_company_profile_snapshot(company_id)
+    st.session_state[cache_key] = snapshot or {}
+    return st.session_state[cache_key]
+
+def invalidate_company_profile_snapshot_cache(company_id):
+    if not company_id:
+        return
+    cache_key = f"profile_snapshot_cache::{company_id}"
+    if cache_key in st.session_state:
+        del st.session_state[cache_key]
 
 def format_profile_memory(profile_snapshot):
     if not profile_snapshot:
@@ -983,6 +1000,8 @@ def index_company_profile(company_id, profile):
             logger.warning(f"Could not store compact profile snapshot: {e}")
 
         registered = register_document(COMPANY_PROFILE_FILENAME, company_id, {"title": "Company Profile"})
+        if registered:
+            invalidate_company_profile_snapshot_cache(company_id)
         return bool(registered)
     except Exception as e:
         logger.error(f"Failed to index company profile: {e}")
@@ -1462,7 +1481,7 @@ def render_sidebar():
         # Logo
         st.markdown('<div style="display: flex; justify-content: center; align-items: center; height: 100px; margin-bottom: 28px;"><span class="logo-animated" style="font-family: \'Playfair Display\', serif; font-size: 56px; font-weight: 800; color: #1A3C34; letter-spacing: -1.2px;">Friday</span></div>', unsafe_allow_html=True)
 
-        profile_snapshot = get_company_profile_snapshot(st.session_state.company_id)
+        profile_snapshot = get_company_profile_snapshot_cached(st.session_state.company_id)
         completion_ratio = compute_profile_completion(profile_snapshot)
         st.markdown("### Company Setup")
         st.progress(completion_ratio, text=f"{int(completion_ratio * 100)}% complete")
@@ -1545,7 +1564,7 @@ def handle_query(query):
         ))
 
         # Always include current company profile memory in the final context.
-        profile_snapshot = get_company_profile_snapshot(st.session_state.company_id)
+        profile_snapshot = get_company_profile_snapshot_cached(st.session_state.company_id)
         profile_memory = format_profile_memory(profile_snapshot)
         if profile_memory:
             context = f"{profile_memory}\n\n{context}" if context else profile_memory
@@ -1869,7 +1888,7 @@ def build_profile_from_onboarding_state():
 
 def hydrate_onboarding_from_snapshot(company_id):
     """Pre-fill onboarding fields from saved company profile."""
-    snapshot = get_company_profile_snapshot(company_id)
+    snapshot = get_company_profile_snapshot_cached(company_id)
     if not snapshot:
         return
     mapping = {
