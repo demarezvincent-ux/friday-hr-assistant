@@ -1293,15 +1293,77 @@ def get_relevant_context(query, company_id):
         return context_str, sources
     except: return "", []
 
-def ask_groq(context, history, query):
+def detect_query_language(query: str) -> str:
+    """
+    Detect the user's query language for EN/NL/FR routing.
+    Returns one of: "english", "dutch", "french".
+    """
+    import re
+
+    text = (query or "").strip().lower()
+    if not text:
+        return "english"
+
+    # Fast keyword checks for very short queries.
+    if any(w in text for w in ["bonjour", "merci", "salut", "conge", "congé"]):
+        return "french"
+    if any(w in text for w in ["hallo", "dank", "goedemorgen", "goedemiddag"]):
+        return "dutch"
+
+    words = re.findall(r"[a-zA-ZÀ-ÿ']+", text)
+    if not words:
+        return "english"
+
+    en_words = {
+        "the", "is", "are", "and", "or", "for", "with", "what", "how", "when",
+        "where", "can", "could", "should", "policy", "employee", "salary", "leave",
+        "holiday", "contract", "hours", "work", "my", "your", "our"
+    }
+    nl_words = {
+        "de", "het", "een", "en", "of", "voor", "met", "wat", "hoe", "wanneer",
+        "waar", "kan", "kun", "moet", "beleid", "werknemer", "loon", "verlof",
+        "vakantie", "contract", "uren", "werk", "mijn", "jouw", "onze"
+    }
+    fr_words = {
+        "le", "la", "les", "un", "une", "des", "et", "ou", "pour", "avec", "quoi",
+        "comment", "quand", "où", "peut", "doit", "politique", "employe", "employé",
+        "salaire", "conge", "congé", "contrat", "heures", "travail", "mon", "votre", "notre"
+    }
+
+    en_score = sum(1 for w in words if w in en_words)
+    nl_score = sum(1 for w in words if w in nl_words)
+    fr_score = sum(1 for w in words if w in fr_words)
+
+    # French accents are a strong signal.
+    if any(ch in text for ch in "éèêàçùôûîïë"):
+        fr_score += 1
+
+    best = max(en_score, nl_score, fr_score)
+    if best == 0:
+        return "english"
+    if fr_score == best and fr_score > nl_score and fr_score > en_score:
+        return "french"
+    if nl_score == best and nl_score > en_score:
+        return "dutch"
+    return "english"
+
+
+def ask_groq(context, history, query, response_language):
     """Ask Groq LLM with multilingual support and smart source citation."""
-    system_prompt = """You are FRIDAY, an expert multilingual HR assistant.
+    language_map = {
+        "english": "English",
+        "dutch": "Dutch",
+        "french": "French",
+    }
+    target_language = language_map.get(response_language, "English")
+
+    system_prompt = f"""You are FRIDAY, an expert multilingual HR assistant.
 
 CRITICAL RULES:
-1. LANGUAGE: Always respond in the SAME LANGUAGE as the user's query.
-   - Dutch query → Dutch response
-   - English query → English response
-   - French query → French response
+1. LANGUAGE: Respond ONLY in {target_language}.
+   - The language is detected from the CURRENT user query.
+   - Ignore any other language signals from profile, context, or chat history.
+   - Never switch to another language.
 
 2. SOURCES: Answer based ONLY on the provided CONTEXT.
    - If the answer requires info from multiple documents, combine them intelligently
@@ -1321,7 +1383,10 @@ CRITICAL RULES:
 6. LEGAL CITATIONS (MANDATORY):
    - The CONTEXT section contains Belgian labor law articles. Each article has its number and law name in the header.
    - When using ANY information from a law article, you MUST cite the EXACT article number and law name from that article's header.
-   - Format: "Conform [artikelnummer] van de [wetnaam] ([datum]): ..."
+   - Use citation phrasing in the response language:
+     English: "According to [article_number] of [law_name] ([date]): ..."
+     Dutch: "Conform [artikelnummer] van de [wetnaam] ([datum]): ..."
+     French: "Conformement a [numero_article] de [nom_loi] ([date]) : ..."
    - Extract the article number FROM THE CONTEXT HEADER, do NOT make up article numbers.
    - If the law text directly answers the question, QUOTE the relevant passage.
    - When multiple articles are relevant, cite ALL of them with their correct numbers.
@@ -1632,7 +1697,8 @@ def handle_query(query):
         if profile_memory:
             context = f"{profile_memory}\n\n{context}" if context else profile_memory
         
-        response = ask_groq(context, history, query)
+        detected_language = detect_query_language(query)
+        response = ask_groq(context, history, query, detected_language)
         
         # source_dict = {"legal_sources": [...], "company_sources": [...]}
         display_sources = source_dict if isinstance(source_dict, dict) else {"legal_sources": [], "company_sources": []}
