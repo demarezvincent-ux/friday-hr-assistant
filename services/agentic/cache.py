@@ -54,45 +54,40 @@ class SemanticCache:
             return None
 
         try:
-            # Prefer unambiguous v2 function if present, then fallback to legacy name.
-            for function_name in ("match_cached_queries_v2", "match_cached_queries"):
-                try:
-                    result = self.supabase.rpc(function_name, {
-                        "p_query_embedding": query_embedding,
-                        "p_company_id": company_id,
-                        "p_match_threshold": self.threshold,
-                        "p_match_count": 1
-                    }).execute()
-                except Exception as function_error:
-                    function_error_text = str(function_error)
-                    # Gracefully fallback when v2 function is not yet created in DB.
-                    if function_name == "match_cached_queries_v2" and (
-                        "PGRST202" in function_error_text
-                        or "Could not find the function" in function_error_text
-                    ):
-                        continue
-                    raise
+            result = self.supabase.rpc("match_cached_queries_v2", {
+                "p_query_embedding": query_embedding,
+                "p_company_id": company_id,
+                "p_match_threshold": self.threshold,
+                "p_match_count": 1
+            }).execute()
 
-                if result.data and len(result.data) > 0:
-                    cache_entry = result.data[0]
-                    logger.info(f"Cache HIT: similarity={cache_entry.get('similarity', 0):.3f}")
-                    return (
-                        cache_entry.get("response", ""),
-                        cache_entry.get("sources", [])
-                    )
+            if result.data and len(result.data) > 0:
+                cache_entry = result.data[0]
+                logger.info(f"Cache HIT: similarity={cache_entry.get('similarity', 0):.3f}")
+                return (
+                    cache_entry.get("response", ""),
+                    cache_entry.get("sources", [])
+                )
 
             logger.debug("Cache MISS")
             return None
 
         except Exception as e:
             error_text = str(e)
+            if "PGRST202" in error_text and "match_cached_queries_v2" in error_text:
+                self._lookup_disabled = True
+                logger.warning(
+                    "Cache lookup disabled: DB function 'match_cached_queries_v2' was not found. "
+                    "Run sql/query_cache_overload_fix.sql in Supabase."
+                )
+                return None
             if "PGRST203" in error_text and "match_cached_queries" in error_text:
                 # Disable cache lookups for this process to avoid repeated noisy failures.
                 # App behavior remains correct; cache is only a performance optimization.
                 self._lookup_disabled = True
                 logger.warning(
-                    "Cache lookup disabled: overloaded DB function 'match_cached_queries' is ambiguous. "
-                    "Apply SQL fix to create 'match_cached_queries_v2' or remove overloads."
+                    "Cache lookup disabled: overloaded legacy DB function 'match_cached_queries' is ambiguous. "
+                    "Ensure app code and DB use 'match_cached_queries_v2'."
                 )
                 return None
 
