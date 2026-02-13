@@ -14,7 +14,6 @@ import json
 import pandas as pd
 from pptx import Presentation
 from huggingface_hub import InferenceClient
-from services.rag_controller import get_context_with_strategy
 
 # Setup logging for debugging
 logger = logging.getLogger(__name__)
@@ -1662,6 +1661,25 @@ def render_sidebar():
 
 def create_new_chat(): st.session_state.current_chat_id = str(uuid.uuid4())
 
+
+def get_context_with_strategy_fn():
+    """
+    Lazy import to avoid occasional Streamlit hot-reload import races.
+    Returns the orchestrator coroutine function.
+    """
+    import importlib
+    last_error = None
+
+    for _ in range(3):
+        try:
+            module = importlib.import_module("services.rag_controller")
+            return module.get_context_with_strategy
+        except Exception as e:
+            last_error = e
+            time.sleep(0.2)
+
+    raise last_error
+
 def handle_query(query):
     save_message(st.session_state.current_chat_id, "user", query, st.session_state.company_id)
     with st.chat_message("user", avatar="👤"): st.write(query)
@@ -1681,6 +1699,7 @@ def handle_query(query):
         
         # Elite RAG Pipeline
         import asyncio
+        get_context_with_strategy = get_context_with_strategy_fn()
         context, source_dict = asyncio.run(get_context_with_strategy(
             raw_query=query,
             company_id=st.session_state.company_id,
