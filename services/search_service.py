@@ -128,21 +128,42 @@ IMPORTANT: Output ONLY valid JSON, no markdown or explanation."""
     def _call_groq_sync(self, query: str) -> SearchParams:
         """Synchronous Groq API call."""
         try:
+            if not self.api_key or not isinstance(self.api_key, str) or not self.api_key.strip():
+                logger.info("Intelligence Engine: no API key configured, using fallback")
+                return self._fallback_params(query)
+
+            base_payload = {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": self.SYSTEM_PROMPT},
+                    {"role": "user", "content": query}
+                ],
+                "temperature": 0.1,
+                "max_tokens": 200,
+            }
+
+            # First attempt: structured JSON mode.
+            payload = dict(base_payload)
+            payload["response_format"] = {"type": "json_object"}
             response = requests.post(
                 self.api_url,
                 headers={"Authorization": f"Bearer {self.api_key}"},
-                json={
-                    "model": self.model,
-                    "messages": [
-                        {"role": "system", "content": self.SYSTEM_PROMPT},
-                        {"role": "user", "content": query}
-                    ],
-                    "temperature": 0.1,
-                    "max_tokens": 200,
-                    "response_format": {"type": "json_object"}
-                },
+                json=payload,
                 timeout=self.timeout
             )
+
+            # Compatibility fallback: some gateways/models reject response_format with HTTP 400.
+            if response.status_code == 400:
+                fallback_response = requests.post(
+                    self.api_url,
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    json=base_payload,
+                    timeout=self.timeout
+                )
+                if fallback_response.status_code == 200:
+                    response = fallback_response
+                else:
+                    response = fallback_response
 
             if response.status_code == 200:
                 data = response.json()
@@ -168,7 +189,16 @@ IMPORTANT: Output ONLY valid JSON, no markdown or explanation."""
                 logger.warning("Intelligence Engine: rate limited")
                 return self._fallback_params(query)
             else:
-                logger.warning(f"Intelligence Engine: HTTP {response.status_code}")
+                error_detail = ""
+                try:
+                    error_json = response.json()
+                    error_detail = error_json.get("error", {}).get("message", "")
+                except Exception:
+                    error_detail = response.text[:200] if response.text else ""
+                if error_detail:
+                    logger.warning(f"Intelligence Engine: HTTP {response.status_code} ({error_detail})")
+                else:
+                    logger.warning(f"Intelligence Engine: HTTP {response.status_code}")
                 return self._fallback_params(query)
 
         except requests.Timeout:
