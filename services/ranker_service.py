@@ -19,7 +19,7 @@ try:
     FLASHRANK_AVAILABLE = True
     logger.info("FlashRank: available")
 except ImportError:
-    logger.warning("FlashRank: not available, using similarity-based ordering")
+    logger.info("FlashRank: not available, using similarity-based ordering")
 
 
 @dataclass
@@ -211,4 +211,3 @@ def rerank_with_huggingface(
     except Exception as e:
         logger.warning(f"HF Reranker failed: {e}")
         return docs[:top_k]
-

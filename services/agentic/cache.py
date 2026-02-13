@@ -33,6 +33,7 @@ class SemanticCache:
         self.supabase = supabase
         self.ttl = timedelta(hours=ttl_hours)
         self.threshold = similarity_threshold
+        self._lookup_disabled = False
     
     def get_cached_response(
         self, 
@@ -49,14 +50,17 @@ class SemanticCache:
         Returns:
             Tuple of (response, sources) if cache hit, None otherwise
         """
+        if self._lookup_disabled:
+            return None
+
         try:
-            result = self.supabase.rpc("match_cached_queries", {
+            result = self.supabase.rpc("match_cached_queries_v2", {
                 "p_query_embedding": query_embedding,
                 "p_company_id": company_id,
                 "p_match_threshold": self.threshold,
                 "p_match_count": 1
             }).execute()
-            
+
             if result.data and len(result.data) > 0:
                 cache_entry = result.data[0]
                 logger.info(f"Cache HIT: similarity={cache_entry.get('similarity', 0):.3f}")
@@ -64,11 +68,29 @@ class SemanticCache:
                     cache_entry.get("response", ""),
                     cache_entry.get("sources", [])
                 )
-            
+
             logger.debug("Cache MISS")
             return None
-            
+
         except Exception as e:
+            error_text = str(e)
+            if "PGRST202" in error_text and "match_cached_queries_v2" in error_text:
+                self._lookup_disabled = True
+                logger.warning(
+                    "Cache lookup disabled: DB function 'match_cached_queries_v2' was not found. "
+                    "Run sql/query_cache_overload_fix.sql in Supabase."
+                )
+                return None
+            if "PGRST203" in error_text and "match_cached_queries" in error_text:
+                # Disable cache lookups for this process to avoid repeated noisy failures.
+                # App behavior remains correct; cache is only a performance optimization.
+                self._lookup_disabled = True
+                logger.warning(
+                    "Cache lookup disabled: overloaded legacy DB function 'match_cached_queries' is ambiguous. "
+                    "Ensure app code and DB use 'match_cached_queries_v2'."
+                )
+                return None
+
             # Cache failures should not break the app
             logger.warning(f"Cache lookup failed (non-critical): {e}")
             return None
